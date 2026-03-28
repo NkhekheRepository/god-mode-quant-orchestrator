@@ -6,8 +6,14 @@ import atexit
 import requests
 import ssl
 import logging
-import psycopg2
-import redis
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
+try:
+    import redis
+except ImportError:
+    redis = None
 from threading import Thread
 from flask import Flask, jsonify, request
 from flask_limiter import Limiter
@@ -65,35 +71,41 @@ def health_check():
     healthy = True
     
     # Check PostgreSQL
-    try:
-        pg_host = os.getenv('POSTGRES_HOST', 'postgres')
-        conn = psycopg2.connect(
-            host=pg_host,
-            port=int(os.getenv('POSTGRES_PORT', 5432)),
-            user=os.getenv('POSTGRES_USER', 'postgres'),
-            password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
-            dbname=os.getenv('POSTGRES_DB', 'vnpy'),
-            connect_timeout=5
-        )
-        conn.close()
-        status["postgres"] = "healthy"
-    except Exception as e:
-        status["postgres"] = f"unhealthy: {str(e)}"
-        healthy = False
+    if psycopg2 is None:
+        status["postgres"] = "not checked (psycopg2 not installed)"
+    else:
+        try:
+            pg_host = os.getenv('POSTGRES_HOST', 'postgres')
+            conn = psycopg2.connect(
+                host=pg_host,
+                port=int(os.getenv('POSTGRES_PORT', 5432)),
+                user=os.getenv('POSTGRES_USER', 'postgres'),
+                password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
+                dbname=os.getenv('POSTGRES_DB', 'vnpy'),
+                connect_timeout=5
+            )
+            conn.close()
+            status["postgres"] = "healthy"
+        except Exception as e:
+            status["postgres"] = f"unhealthy: {str(e)}"
+            healthy = False
     
     # Check Redis
-    try:
-        r = redis.Redis(
-            host=os.getenv('REDIS_HOST', 'redis'),
-            port=int(os.getenv('REDIS_PORT', 6379)),
-            password=os.getenv('REDIS_PASSWORD', '') or None,
-            socket_connect_timeout=5
-        )
-        r.ping()
-        status["redis"] = "healthy"
-    except Exception as e:
-        status["redis"] = f"unhealthy: {str(e)}"
-        healthy = False
+    if redis is None:
+        status["redis"] = "not checked (redis not installed)"
+    else:
+        try:
+            r = redis.Redis(
+                host=os.getenv('REDIS_HOST', 'redis'),
+                port=int(os.getenv('REDIS_PORT', 6379)),
+                password=os.getenv('REDIS_PASSWORD', '') or None,
+                socket_connect_timeout=5
+            )
+            r.ping()
+            status["redis"] = "healthy"
+        except Exception as e:
+            status["redis"] = f"unhealthy: {str(e)}"
+            healthy = False
     
     if healthy:
         return jsonify(status), 200

@@ -1,0 +1,70 @@
+# Ignore venv
+venv/
+.venv/
+env/
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Ignore Git
+.git/
+.github/
+.gitignore
+
+# Ignore documentation
+*.md
+docs/
+README.md
+CHANGELOG.md
+LICENSE
+*.txt
+!requirements.txt
+!requirements.ml.txt
+
+# Ignore monitoring and k8s
+monitoring/
+k8s/
+.ai_ml/
+
+# Ignore test and CI
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Ignore environment files
+.env
+.env.*
+
+# Ignore large directories
+ai_ml/
+strategies/
+tests/
+utils/
+security/
+database/
+exchange/
+risk/
+
+# Ignore IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore OS
+.DS_Store
+Thumbs.db
+
+# Ignore logs
+*.log
+output.log
+
+# Ignore build artifacts
+dist/
+build/
+*.egg-info/
