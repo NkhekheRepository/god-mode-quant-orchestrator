@@ -72,7 +72,7 @@ Expected output:
 
 ```bash
 # Check orchestrator health
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 ```
 
 Expected response:
@@ -117,7 +117,8 @@ Use /help for available commands
 
 | Service | URL | Default Credentials |
 |---------|-----|---------------------|
-| Orchestrator API | http://localhost:8000 | - |
+| Orchestrator API | http://localhost:8003 | - |
+| App Metrics | http://localhost:9091 | - |
 | Prometheus | http://localhost:9090 | - |
 | Grafana | http://localhost:3000 | admin/admin |
 
@@ -249,10 +250,10 @@ docker-compose down
 docker-compose logs -f
 
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 
 # Metrics
-curl http://localhost:8000/metrics
+curl http://localhost:8003/metrics
 ```
 
 ---

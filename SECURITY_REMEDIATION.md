@@ -638,12 +638,12 @@ def add_rate_limit_headers(response):
 # Test rate limiting
 # Run 11 requests in under a minute
 for i in {1..11}; do
-  curl -u admin:password http://localhost:8000/api/submit_order
+  curl -u admin:password http://localhost:8003/api/submit_order
 done
 # Request 11 should return 429 Too Many Requests
 
 # Check rate limit headers
-curl -I -u admin:password http://localhost:8000/api/submit_order
+curl -I -u admin:password http://localhost:8003/api/submit_order
 # Should see X-RateLimit-* headers
 ```
 
@@ -820,7 +820,7 @@ def metrics():
 **Verification:**
 ```bash
 # Test without authentication (should fail)
-curl -X POST http://localhost:8000/api/submit_order
+curl -X POST http://localhost:8003/api/submit_order
 # Response: 401 Unauthorized
 
 # Test with authentication (should succeed)
@@ -828,11 +828,11 @@ curl -X POST \
   -u admin:password \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","side":"buy","quantity":0.01}' \
-  http://localhost:8000/api/submit_order
+  http://localhost:8003/api/submit_order
 # Response: 200 OK
 
 # Test with wrong password (should fail)
-curl -X POST -u admin:wrongpassword http://localhost:8000/api/submit_order
+curl -X POST -u admin:wrongpassword http://localhost:8003/api/submit_order
 # Response: 401 Unauthorized
 ```
 
@@ -1146,7 +1146,7 @@ def unauthorized():
 **Verification:**
 ```bash
 # Test security logging
-curl -u admin:wrongpassword http://localhost:8000/api/positions
+curl -u admin:wrongpassword http://localhost:8003/api/positions
 
 # Check security logs
 tail -f logs/security.log
@@ -1307,12 +1307,12 @@ pytest tests/test_security.py -v
 
 ```bash
 # Test 1: Authentication
-curl -u admin:password http://localhost:8000/api/positions  # Should succeed
-curl -u admin:wrong http://localhost:8000/api/positions    # Should fail with 401
+curl -u admin:password http://localhost:8003/api/positions  # Should succeed
+curl -u admin:wrong http://localhost:8003/api/positions    # Should fail with 401
 
 # Test 2: Rate limiting
 for i in {1..11}; do
-  curl -u admin:password http://localhost:8000/api/submit_order
+  curl -u admin:password http://localhost:8003/api/submit_order
 done
 # Request 11 should return 429
 
@@ -1320,11 +1320,11 @@ done
 curl -X POST -u admin:password \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT; DROP TABLE trades--","status":"OPEN"}' \
-  http://localhost:8000/api/get_trades
+  http://localhost:8003/api/get_trades
 # Should return validation error, not execute SQL
 
 # Test 4: Security headers
-curl -I http://localhost:8000/api/positions
+curl -I http://localhost:8003/api/positions
 # Should see: X-Content-Type-Options, X-Frame-Options, etc.
 
 # Test 5: WebSocket origin validation

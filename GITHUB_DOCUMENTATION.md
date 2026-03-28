@@ -220,10 +220,10 @@ docker-compose up -d
 
 # 4. Verify everything is running
 docker-compose ps
-curl http://localhost:8000/health  # Should return {"status":"healthy"}
+curl http://localhost:8003/health  # Should return {"status":"healthy"}
 
 # 5. Access dashboards
-# - Trading API: http://localhost:8000
+# - Trading API: http://localhost:8003
 # - Grafana: http://localhost:3000 (admin/admin)
 # - Prometheus: http://localhost:9090
 
@@ -247,7 +247,7 @@ services:
   trading-orchestrator:
     build: .
     ports:
-      - "8000:8000"
+      - "8003:8003"
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
@@ -470,7 +470,7 @@ Authorization: Bearer <your_token>
 #### Example: Get Positions
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-     http://localhost:8000/api/v1/positions
+     http://localhost:8003/api/v1/positions
 ```
 
 Response:
@@ -518,7 +518,7 @@ docker-compose down -v
 docker-compose ps
 
 # Test API
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 
 # Check database connection
 docker-compose exec postgres psql -U postgres -d vnpy -c "\dt"

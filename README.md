@@ -98,7 +98,7 @@ cp .env.example .env
 docker-compose up -d
 
 # 4. Check status
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 ```
 
 **Important Security Step:**
@@ -281,7 +281,8 @@ def submit_order():
 
 | Service    | Port | URL                  | Purpose |
 |------------|------|----------------------|---------|
-| Orchestrator | 8000 | http://localhost:8000 | Main API |
+| Orchestrator | 8003 | http://localhost:8003 | Main API |
+| App Metrics | 9091 | http://localhost:9091 | Application metrics (Prometheus format) |
 | Prometheus | 9090 | http://localhost:9090 | Metrics collection |
 | Grafana    | 3000 | http://localhost:3000 | Visualization |
 
@@ -320,7 +321,7 @@ docker-compose up -d
 docker-compose logs -f trading-orchestrator
 
 # Check health
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 ```
 
 ### Kubernetes Deployment
@@ -350,8 +351,8 @@ kubectl get pods -n quant-trading
 kubectl logs -f deployment/god-mode-orchestrator -n quant-trading
 
 # 5. Access service (if LoadBalancer or Ingress configured)
-kubectl port-forward svc/god-mode-orchestrator 8000:8003 -n quant-trading
-curl http://localhost:8000/health
+kubectl port-forward svc/god-mode-orchestrator 8003:8003 -n quant-trading
+curl http://localhost:8003/health
 ```
 
 **Note:** Ensure you create the `god-mode-secrets` secret with your environment variables before deployment.
@@ -415,7 +416,7 @@ Edit `docker-compose.yml` to customize service settings:
 services:
   trading-orchestrator:
     ports:
-      - "8000:8000"
+      - "8003:8003"
     environment:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - API_USERNAME=${API_USERNAME}
@@ -438,17 +439,17 @@ python main.py
 
 ```bash
 # Health check
-curl -u admin:password http://localhost:8000/health
+curl -u admin:password http://localhost:8003/health
 
 # Get metrics
-curl -u admin:password http://localhost:8000/metrics
+curl -u admin:password http://localhost:8003/metrics
 
 # Submit order (rate limited to 10/minute)
 curl -X POST \
   -u admin:password \
   -H "Content-Type: application/json" \
   -d '{"symbol":"BTCUSDT","side":"buy","quantity":0.01}' \
-  http://localhost:8000/api/submit_order
+  http://localhost:8003/api/submit_order
 ```
 
 ### Telegram Commands

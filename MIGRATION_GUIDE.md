@@ -135,7 +135,7 @@ Before migrating, ensure you have:
    REFRESH_TOKEN_EXPIRE_DAYS=30
 
    # API Configuration
-   API_PORT=8000
+   API_PORT=8003
    API_HOST=0.0.0.0
    API_WORKERS=1
 
@@ -173,12 +173,12 @@ The database manager will automatically handle schema updates:
 
 2. Test health endpoint (no auth required):
    ```bash
-   curl http://localhost:8000/health
+   curl http://localhost:8003/health
    ```
 
 3. Test login endpoint:
    ```bash
-   curl -X POST http://localhost:8000/api/auth/token \
+   curl -X POST http://localhost:8003/api/auth/token \
      -H "Content-Type: application/x-www-form-urlencoded" \
      -d "username=admin&password=<your_password>"
    ```
@@ -199,14 +199,14 @@ from requests.auth import HTTPBasicAuth
 
 # First, get token
 response = requests.post(
-    'http://localhost:8000/api/auth/token',
+    'http://localhost:8003/api/auth/token',
     data={'username': 'admin', 'password': 'your_password'}
 )
 token = response.json()['access_token']
 
 # Use token for requests
 headers = {'Authorization': f'Bearer {token}'}
-response = requests.get('http://localhost:8000/api/orders', headers=headers)
+response = requests.get('http://localhost:8003/api/orders', headers=headers)
 ```
 
 **In JavaScript:**
@@ -223,7 +223,7 @@ async function getToken(username, password) {
   params.append('username', username);
   params.append('password', password);
   
-  const response = await fetch('http://localhost:8000/api/auth/token', {
+  const response = await fetch('http://localhost:8003/api/auth/token', {
     method: 'POST',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: params
@@ -240,16 +240,16 @@ const headers = {'Authorization': `Bearer ${tokenData.access_token}`};
 
 ```bash
 # v2.0.0
-curl -u admin:password http://localhost:8000/api/orders
+curl -u admin:password http://localhost:8003/api/orders
 
 # v2.1.0
 # First get token
-TOKEN=$(curl -X POST http://localhost:8000/api/auth/token \
+TOKEN=$(curl -X POST http://localhost:8003/api/auth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "username=admin&password=your_password" | jq -r '.access_token')
 
 # Use token
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/orders
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/api/orders
 ```
 
 ### Step 7: Verify Migration
@@ -257,10 +257,10 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/orders
 1. Test protected endpoints:
    ```bash
    # Get orders (requires auth)
-   curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/orders
+   curl -H "Authorization: Bearer $TOKEN" http://localhost:8003/api/orders
    
    # Create order (requires trader role)
-   curl -X POST http://localhost:8000/api/orders \
+   curl -X POST http://localhost:8003/api/orders \
      -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"symbol":"BTCUSDT","side":"buy","quantity":0.01,"order_type":"LIMIT"}'
@@ -268,7 +268,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/orders
 
 2. Check metrics:
    ```bash
-   curl http://localhost:8000/metrics
+   curl http://localhost:8003/metrics
    ```
 
 3. Review logs:
@@ -296,11 +296,11 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/orders
        command: python main_fastapi.py
        environment:
          - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-         - API_PORT=8000
+         - API_PORT=8003
        ports:
-         - "8000:8000"
+          - "8003:8003"
        healthcheck:
-         test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+         test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
          interval: 30s
          timeout: 10s
          retries: 3
@@ -487,7 +487,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 REFRESH_TOKEN_EXPIRE_DAYS=30
 
 # API Configuration
-API_PORT=8000
+API_PORT=8003
 API_HOST=0.0.0.0
 API_WORKERS=1
 
@@ -518,7 +518,7 @@ AUDITOR_PASSWORD=$(openssl rand -base64 16)
 
 ```yaml
 healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
   interval: 30s
   timeout: 10s
   retries: 3
@@ -651,7 +651,7 @@ If you need to rollback from v2.1.0 to v2.0.0:
 7. **Verify functionality:**
    ```bash
    # Test with Basic Auth (v2.0.0)
-   curl -u admin:password http://localhost:8000/health
+   curl -u admin:password http://localhost:8003/health
    ```
 
 ## Troubleshooting

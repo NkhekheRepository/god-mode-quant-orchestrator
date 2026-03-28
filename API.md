@@ -26,7 +26,7 @@ The God Mode Quant Trading Orchestrator exposes a RESTful API for:
 
 | Environment | URL |
 |-------------|-----|
-| Development | http://localhost:8000 |
+| Development | http://localhost:8003 |
 | Production | https://api.yourdomain.com |
 
 ## Authentication
@@ -55,7 +55,7 @@ GET /health
 
 **cURL:**
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8003/health
 ```
 
 ---
@@ -90,7 +90,7 @@ security_trust_score{service_or_user="orchestrator:system"} 95.0
 
 **cURL:**
 ```bash
-curl http://localhost:8000/metrics
+curl http://localhost:8003/metrics
 ```
 
 **Available Metrics:**
