@@ -13,6 +13,14 @@ from enum import Enum
 from flask import Flask, request, jsonify
 import requests
 
+# Use python-telegram-bot library for robust polling
+try:
+    from telegram import Update
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+    TELEGRAM_BOT_AVAILABLE = True
+except ImportError:
+    TELEGRAM_BOT_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # Try to import the dashboard
@@ -49,48 +57,47 @@ class UserSession:
 
 class TelegramBotHandler:
     """Telegram bot command handler with state management"""
-    
+
     def __init__(self, bot_token: str, dashboard: TelegramDashboard = None):
         self.bot_token = bot_token
         self.api_base = f"https://api.telegram.org/bot{bot_token}"
         self.dashboard = dashboard
-        
+
         # User sessions
         self._sessions: Dict[int, UserSession] = {}
         self._lock = threading.RLock()
-        
+        self.offset = None  # Track polling offset
+
         # Command handlers
         self._command_handlers: Dict[str, Callable] = {}
         self._callback_handlers: Dict[str, Callable] = {}
-        
+
         # Register default handlers
         self._register_default_handlers()
-        
+
         # Flask app for webhook
         self.app = Flask(__name__)
         self._setup_routes()
-    
+
     def _register_default_handlers(self):
         """Register default command and callback handlers"""
-        # These are handled by the dashboard
+        # These are handled by the dashboard - only include handlers that exist
         self._callback_handlers = {
-            "cmd_status": lambda cb, cid: self.dashboard._get_status_command([]) if self.dashboard else "Status unavailable",
-            "cmd_positions": lambda cb, cid: self.dashboard._get_positions_command([]) if self.dashboard else "Positions unavailable",
-            "cmd_risk": lambda cb, cid: self.dashboard._get_risk_command([]) if self.dashboard else "Risk report unavailable",
-            "cmd_trust": lambda cb, cid: self.dashboard._get_trust_command([]) if self.dashboard else "Trust score unavailable",
-            "cmd_pnl": lambda cb, cid: self.dashboard._get_pnl_command([]) if self.dashboard else "P&L unavailable",
-            "cmd_summary": lambda cb, cid: self.dashboard._get_summary_command([]) if self.dashboard else "Summary unavailable",
-            "cmd_engine": lambda cb, cid: self.dashboard._get_engine_command([]) if self.dashboard else "Engine unavailable",
-            "cmd_leverage": lambda cb, cid: self.dashboard._get_leverage_command([]) if self.dashboard else "Leverage unavailable",
-            "cmd_kelly": lambda cb, cid: self.dashboard._get_kelly_command([]) if self.dashboard else "Kelly unavailable",
-            "cmd_strategies": lambda cb, cid: self.dashboard._get_strategies_command([]) if self.dashboard else "Strategies unavailable",
-            "cmd_signal": lambda cb, cid: self.dashboard._get_signal_command([]) if self.dashboard else "Signal unavailable",
-            "cmd_orders": lambda cb, cid: self.dashboard._get_orders_command([]) if self.dashboard else "Orders unavailable",
-            "cmd_var": lambda cb, cid: self.dashboard._get_var_command([]) if self.dashboard else "VaR unavailable",
+            "cmd_status": lambda cb, cid: self.dashboard.handle_command("status", []) if self.dashboard else "Status unavailable",
+            "cmd_engine": lambda cb, cid: self.dashboard.handle_command("engine", []) if self.dashboard else "Engine unavailable",
+            "cmd_leverage": lambda cb, cid: self.dashboard.handle_command("leverage", []) if self.dashboard else "Leverage unavailable",
+            "cmd_kelly": lambda cb, cid: self.dashboard.handle_command("kelly", []) if self.dashboard else "Kelly unavailable",
+            "cmd_strategies": lambda cb, cid: self.dashboard.handle_command("strategies", []) if self.dashboard else "Strategies unavailable",
+            "cmd_signal": lambda cb, cid: self.dashboard.handle_command("signal", []) if self.dashboard else "Signal unavailable",
+            "cmd_orders": lambda cb, cid: self.dashboard.handle_command("orders", []) if self.dashboard else "Orders unavailable",
+            "cmd_var": lambda cb, cid: self.dashboard.handle_command("var", []) if self.dashboard else "VaR unavailable",
+            "cmd_help": lambda cb, cid: self.dashboard.handle_command("help", []) if self.dashboard else "Help unavailable",
+            "cmd_balance": lambda cb, cid: self.dashboard.handle_command("balance", []) if self.dashboard else "Balance unavailable",
+            "cmd_positions": lambda cb, cid: self.dashboard.handle_command("positions", []) if self.dashboard else "Positions unavailable",
             "alerts_on": self._handle_alerts_on,
             "alerts_off": self._handle_alerts_off
         }
-    
+
     def _handle_alerts_on(self, callback_data: str, chat_id: int) -> str:
         """Handle alerts on callback"""
         session = self._get_session(chat_id)
@@ -99,7 +106,7 @@ class TelegramBotHandler:
             session.alert_enabled = True
             return "\U0001F4E2 <b>Alerts Enabled</b>\n\nRisk and trade alerts are now active."
         return "\U0001F4E2 Alerts enabled"
-    
+
     def _handle_alerts_off(self, callback_data: str, chat_id: int) -> str:
         """Handle alerts off callback"""
         session = self._get_session(chat_id)
@@ -446,50 +453,80 @@ class TelegramBotHandler:
         self.app.run(host=host, port=port, debug=debug)
     
     def start_polling(self, timeout: int = 10):
-        """Start polling for updates (alternative to webhooks)"""
-        offset = None  # Start with None to get latest updates
-        logger.info("Starting polling loop")
+        """Start polling for updates using requests (simple approach)"""
+        self.offset = None
+        
+        # Delete any existing webhook before polling (webhook and polling are mutually exclusive)
+        logger.info("Clearing any existing webhook before polling...")
+        try:
+            delete_result = self.delete_webhook()
+            logger.info(f"Webhook deleted: {delete_result}")
+        except Exception as e:
+            logger.warning(f"Could not delete webhook: {e}")
+        
+        # Small delay to ensure webhook is cleared
+        time.sleep(1)
+        
+        logger.info("Starting polling loop (simple)")
+        
+        consecutive_errors = 0
+        max_consecutive_errors = 10
         
         while True:
             try:
                 url = f"{self.api_base}/getUpdates"
-                params = {'timeout': timeout}
-                if offset is not None:
-                    params['offset'] = offset
+                params = {'timeout': timeout, 'allowed_updates': ['message', 'callback_query']}
+                if self.offset is not None:
+                    params['offset'] = self.offset
                 
-                logger.info(f"Polling with offset: {offset}")
-                response = requests.get(url, params=params, timeout=timeout + 10)
-                response.raise_for_status()
+                logger.debug(f"Polling with offset: {self.offset}")
+                response = requests.get(url, params=params, timeout=timeout + 15)
                 result = response.json()
                 
                 if not result.get('ok'):
-                    logger.error(f"Polling API error: {result}")
+                    error_desc = result.get('description', 'Unknown error')
+                    logger.error(f"Polling API error: {error_desc}")
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"Too many consecutive errors ({consecutive_errors}), restarting polling...")
+                        self.offset = None
+                        consecutive_errors = 0
+                    time.sleep(5)
                     continue
                 
-                if result.get('ok'):
-                    updates = result.get('result', [])
-                    logger.info(f"Polling: got {len(updates)} updates")
+                # Reset error counter on success
+                consecutive_errors = 0
+                
+                updates = result.get('result', [])
+                if updates:
+                    logger.info(f"Polling: got {len(updates)} update(s)")
+                
+                for update in updates:
+                    self.offset = update.get('update_id', 0) + 1
+                    logger.info(f"Processing update ID: {update.get('update_id')}")
                     
-                    if updates:
-                        logger.info(f"Processing {len(updates)} updates")
-                        for update in updates:
-                            offset = update.get('update_id', 0) + 1
-                            logger.info(f"Processing update {offset}")
-                            
-                            try:
-                                if 'message' in update:
-                                    msg = update['message']
-                                    logger.info(f"Got message: {msg.get('text', '')[:50]}")
-                                    self._handle_message_simple(msg)
-                                elif 'callback_query' in update:
-                                    self._handle_callback_simple(update['callback_query'])
-                            except Exception as e:
-                                logger.error(f"Error processing update: {e}")
-                                
+                    try:
+                        if 'message' in update:
+                            msg = update['message']
+                            text = msg.get('text', '')
+                            chat_id = msg.get('chat', {}).get('id')
+                            logger.info(f"Received message: '{text}' from chat {chat_id}")
+                            self._handle_message_simple(msg)
+                        elif 'callback_query' in update:
+                            cb_data = update['callback_query'].get('data', '')
+                            logger.info(f"Received callback: '{cb_data}'")
+                            self._handle_callback_simple(update['callback_query'])
+                    except Exception as e:
+                        logger.error(f"Error processing update: {e}", exc_info=True)
+                        
             except requests.exceptions.ReadTimeout:
+                # Normal long-polling timeout, continue
                 continue
+            except requests.exceptions.ConnectionError as e:
+                logger.error(f"Connection error during polling: {e}")
+                time.sleep(5)
             except Exception as e:
-                logger.error(f"Polling error: {e}")
+                logger.error(f"Polling error: {e}", exc_info=True)
                 time.sleep(5)
 
 

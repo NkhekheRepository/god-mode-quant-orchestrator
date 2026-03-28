@@ -7,12 +7,39 @@ import time
 import hmac
 import hashlib
 import logging
+import random
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration
+MAX_RETRIES = 3
+BASE_DELAY = 1.0
+MAX_DELAY = 60.0
+
+
+def retry_with_backoff(max_retries=MAX_RETRIES, base_delay=BASE_DELAY, max_delay=MAX_DELAY):
+    """Decorator for retrying with exponential backoff"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        delay = min(base_delay * (2 ** attempt) + random.uniform(0, 0.1), max_delay)
+                        logger.warning(f"Request failed (attempt {attempt + 1}): {e}, retrying in {delay:.1f}s")
+                        time.sleep(delay)
+                    else:
+                        logger.error(f"Request failed after {max_retries} attempts: {e}")
+                        raise
+        return wrapper
+    return decorator
 
 
 class BinanceConfig:
@@ -82,6 +109,7 @@ class BinanceGateway:
             hashlib.sha256
         ).hexdigest()
     
+    @retry_with_backoff()
     def _signed_request(
         self,
         method: str,
@@ -129,6 +157,7 @@ class BinanceGateway:
             logger.error(f"Request failed: {e}")
             raise
     
+    @retry_with_backoff()
     def _public_request(self, endpoint: str, params: Dict = None) -> Dict:
         """Make public API request"""
         if params is None:

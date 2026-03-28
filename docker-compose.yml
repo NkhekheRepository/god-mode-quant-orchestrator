@@ -63,54 +63,67 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      ml-time-series-forecast:
-        condition: service_healthy
-      ml-sentiment-analysis:
-        condition: service_healthy
     ports:
-      - "8003:8000"
+      - "8003:8003"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ML Model Services
-  ml-time-series-forecast:
-    build:
-      context: .
-      dockerfile: Dockerfile.ml
-    environment:
-      - MODEL_TYPE=random_forest
-      - PREDICTION_INTERVAL=300
-      - LOG_LEVEL=INFO
-    volumes:
-      - ./ai_ml:/app/ai_ml
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-  ml-sentiment-analysis:
-    build:
-      context: .
-      dockerfile: Dockerfile.ml
-    environment:
-      - MODEL_TYPE=sentiment
-      - ANALYSIS_INTERVAL=60
-      - LOG_LEVEL=INFO
-    volumes:
-      - ./ai_ml:/app/ai_ml
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+  # ML Model Services (disabled by default - uncomment to enable)
+  # To enable ML services, uncomment the sections below and run:
+  # docker compose --profile ml up -d
+  #
+  # ml-time-series-forecast:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.ml
+  #   environment:
+  #     - MODEL_TYPE=random_forest
+  #     - PREDICTION_INTERVAL=300
+  #     - LOG_LEVEL=INFO
+  #   volumes:
+  #     - ./ai_ml:/app/ai_ml
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
+  #
+  # ml-sentiment-analysis:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.ml
+  #   environment:
+  #     - MODEL_TYPE=sentiment
+  #     - ANALYSIS_INTERVAL=60
+  #     - LOG_LEVEL=INFO
+  #   volumes:
+  #     - ./ai_ml:/app/ai_ml
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 60s
 
   # Monitoring Services
   prometheus:

@@ -20,53 +20,65 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+    Model = None
+    keras = None
     print("TensorFlow not available. Install with: pip install tensorflow")
 
 
-class TransformerBlock(keras.layers.Layer):
-    """
-    Transformer encoder block with self-attention
-    """
-    
-    def __init__(self, embed_dim: int, num_heads: int, ff_dim: int, rate: float = 0.1):
+def _create_transformer_block():
+    """Factory function for TransformerBlock when TensorFlow is available"""
+    if not TENSORFLOW_AVAILABLE:
+        return None
+
+    class TransformerBlock(keras.layers.Layer):
         """
-        Initialize Transformer block
-        
-        Args:
-            embed_dim: Embedding dimension
-            num_heads: Number of attention heads
-            ff_dim: Feed-forward dimension
-            rate: Dropout rate
+        Transformer encoder block with self-attention
         """
-        super().__init__()
-        self.att = MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
-        self.ffn = keras.Sequential([
-            Dense(ff_dim, activation="gelu"),
-            Dense(embed_dim),
-        ])
-        self.layernorm1 = LayerNormalization(epsilon=1e-6)
-        self.layernorm2 = LayerNormalization(epsilon=1e-6)
-        self.dropout1 = Dropout(rate)
-        self.dropout2 = Dropout(rate)
-    
-    def call(self, inputs, training=False):
-        """
-        Forward pass
-        
-        Args:
-            inputs: Input tensor
-            training: Training mode
-            
-        Returns:
-            Output tensor
-        """
-        attn_output = self.att(inputs, inputs, training=training)
-        attn_output = self.dropout1(attn_output, training=training)
-        out1 = self.layernorm1(inputs + attn_output)
-        
-        ffn_output = self.ffn(out1, training=training)
-        ffn_output = self.dropout2(ffn_output, training=training)
-        return self.layernorm2(out1 + ffn_output)
+
+        def __init__(self, embed_dim: int, num_heads: int, ff_dim: int, rate: float = 0.1):
+            """
+            Initialize Transformer block
+
+            Args:
+                embed_dim: Embedding dimension
+                num_heads: Number of attention heads
+                ff_dim: Feed-forward dimension
+                rate: Dropout rate
+            """
+            super().__init__()
+            self.att = MultiHeadAttention(num_heads=num_heads, key_dim=embed_dim)
+            self.ffn = keras.Sequential([
+                Dense(ff_dim, activation="gelu"),
+                Dense(embed_dim),
+            ])
+            self.layernorm1 = LayerNormalization(epsilon=1e-6)
+            self.layernorm2 = LayerNormalization(epsilon=1e-6)
+            self.dropout1 = Dropout(rate)
+            self.dropout2 = Dropout(rate)
+
+        def call(self, inputs, training=False):
+            """
+            Forward pass
+
+            Args:
+                inputs: Input tensor
+                training: Training mode
+
+            Returns:
+                Output tensor
+            """
+            attn_output = self.att(inputs, inputs, training=training)
+            attn_output = self.dropout1(attn_output, training=training)
+            out1 = self.layernorm1(inputs + attn_output)
+
+            ffn_output = self.ffn(out1, training=training)
+            ffn_output = self.dropout2(ffn_output, training=training)
+            return self.layernorm2(out1 + ffn_output)
+
+    return TransformerBlock
+
+
+TransformerBlock = _create_transformer_block()
 
 
 class TransformerPricePredictor:
@@ -111,7 +123,7 @@ class TransformerPricePredictor:
         self.model = None
         self.is_fitted = False
     
-    def positional_encoding(self, seq_len: int, d_model: int) -> tf.Tensor:
+    def positional_encoding(self, seq_len: int, d_model: int):
         """
         Create positional encoding
         
@@ -131,27 +143,30 @@ class TransformerPricePredictor:
         
         return tf.cast(pe[np.newaxis, :, :], dtype=tf.float32)
     
-    def build_model(self, input_shape: tuple, num_features: int = 1) -> Model:
+    def build_model(self, input_shape: tuple, num_features: int = 1):
         """
         Build Transformer model
-        
+
         Args:
             input_shape: Input shape (sequence_length, features)
             num_features: Number of input features
-            
+
         Returns:
             Compiled Keras model
         """
+        if not TENSORFLOW_AVAILABLE:
+            raise ImportError("TensorFlow is required. Install with: pip install tensorflow")
+
         inputs = Input(shape=input_shape)
-        
+
         # Add positional encoding
         pos_encoding = self.positional_encoding(input_shape[0], self.embed_dim)
-        
+
         # Project input to embedding dimension
         x = Dense(self.embed_dim)(inputs)
         x = Add()([x, pos_encoding[:, :input_shape[0], :]])
         x = Dropout(self.dropout_rate)(x)
-        
+
         # Stack transformer blocks
         for _ in range(self.num_layers):
             x = TransformerBlock(
@@ -160,7 +175,7 @@ class TransformerPricePredictor:
                 ff_dim=self.ff_dim,
                 rate=self.dropout_rate
             )(x)
-        
+
         # Global pooling
         x = GlobalAveragePooling1D()(x)
         

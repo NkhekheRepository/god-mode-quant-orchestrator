@@ -12,12 +12,23 @@ import os
 import time
 import logging
 import threading
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.logging_config import setup_logging
 
-logger = logging.getLogger(__name__)
+logger = setup_logging('trading_engine')
+
+# Import ML Service
+try:
+    from ml_service import get_ml_service, initialize_ml_service
+    ML_SERVICE_AVAILABLE = True
+except ImportError:
+    ML_SERVICE_AVAILABLE = False
+    logger.warning("ML Service not available. ML predictions will be disabled.")
 
 
 class EngineState(Enum):
@@ -93,6 +104,9 @@ class TradingEngine:
         self.testnet = self.config.get('testnet', True)
         self.trading_interval = self.config.get('trading_interval', 5)  # seconds
         
+        # ML Service configuration
+        self.ml_enabled = self.config.get('ml_enabled', True) and ML_SERVICE_AVAILABLE
+        
         # Components (initialized later)
         self.gateway = None
         self.order_manager = None
@@ -116,6 +130,12 @@ class TradingEngine:
         self.trade_pnls: List[float] = []
         self.open_positions: Dict[str, Dict] = {}
         
+        # ML Service
+        self.ml_service = None
+        self.ml_price_history: List[float] = []
+        self.ml_volume_history: List[float] = []
+        self.max_ml_history = 1000  # Keep last 1000 price/volume points for ML
+        
         # Strategies
         self.strategies: Dict[str, Any] = {}
         
@@ -124,56 +144,114 @@ class TradingEngine:
     
     def initialize(self) -> bool:
         """
-        Initialize all components
+        Initialize all components with fault tolerance
         
         Returns:
-            True if initialization successful
+            True if at least critical components initialized
         """
         logger.info("=" * 60)
         logger.info("  GOD MODE QUANT TRADING ENGINE - INITIALIZING")
         logger.info("=" * 60)
         
+        initialized_components = []
+        critical_failed = False
+        
+        # 1. Initialize Exchange Gateway (may fail in demo mode)
         try:
-            # 1. Initialize Exchange Gateway
             self._init_gateway()
-            
-            # 2. Initialize Order Manager
-            self._init_order_manager()
-            
-            # 3. Initialize Position Tracker
-            self._init_position_tracker()
-            
-            # 4. Initialize Strategies
+            initialized_components.append("gateway")
+        except Exception as e:
+            logger.warning(f"Gateway initialization failed (demo mode?): {e}")
+            # Continue without gateway - engine can still provide status
+        
+        # 2. Initialize Order Manager (requires gateway)
+        if self.gateway:
+            try:
+                self._init_order_manager()
+                initialized_components.append("order_manager")
+            except Exception as e:
+                logger.warning(f"Order manager initialization failed: {e}")
+        
+        # 3. Initialize Position Tracker (requires gateway)
+        if self.gateway:
+            try:
+                self._init_position_tracker()
+                initialized_components.append("position_tracker")
+            except Exception as e:
+                logger.warning(f"Position tracker initialization failed: {e}")
+        
+        # 4. Initialize Strategies (no external dependencies)
+        try:
             self._init_strategies()
-            
-            # 5. Initialize Strategy Router
-            self._init_strategy_router()
-            
-            # 6. Initialize Risk Management
+            initialized_components.append("strategies")
+        except Exception as e:
+            logger.error(f"Strategies initialization failed: {e}")
+            critical_failed = True
+        
+        # 5. Initialize Strategy Router (requires strategies)
+        if self.strategies:
+            try:
+                self._init_strategy_router()
+                initialized_components.append("strategy_router")
+            except Exception as e:
+                logger.warning(f"Strategy router initialization failed: {e}")
+
+        # 6. Initialize ML Service (if enabled)
+        if self.ml_enabled:
+            try:
+                self._init_ml_service()
+                initialized_components.append("ml_service")
+            except Exception as e:
+                logger.warning(f"ML Service initialization failed: {e}")
+                # Continue without ML service - not critical
+
+        # 7. Initialize Risk Management (no external dependencies)
+        try:
             self._init_risk_management()
-            
-            # 7. Set leverage on exchange
-            self._configure_exchange()
-            
-            # 8. Get initial balance
-            self._sync_balance()
-            
-            # 9. Start circuit breaker day
-            self.circuit_breaker.start_day(self.current_balance)
-            
+            initialized_components.append("risk_management")
+        except Exception as e:
+            logger.error(f"Risk management initialization failed: {e}")
+            critical_failed = True
+        
+        # 7. Set leverage on exchange (requires gateway)
+        if self.gateway:
+            try:
+                self._configure_exchange()
+            except Exception as e:
+                logger.warning(f"Exchange configuration failed: {e}")
+        
+        # 8. Get initial balance (requires gateway)
+        if self.gateway:
+            try:
+                self._sync_balance()
+            except Exception as e:
+                logger.warning(f"Balance sync failed: {e}")
+        
+        # 9. Start circuit breaker day (requires risk management)
+        if self.circuit_breaker:
+            try:
+                self.circuit_breaker.start_day(self.current_balance)
+            except Exception as e:
+                logger.warning(f"Circuit breaker start failed: {e}")
+        
+        # Determine overall state
+        if critical_failed:
+            self.state = EngineState.ERROR
+            logger.error("Critical components failed to initialize")
+            return False
+        elif "risk_management" in initialized_components and "strategies" in initialized_components:
             self.state = EngineState.READY
             logger.info("=" * 60)
-            logger.info("  ENGINE INITIALIZATION COMPLETE")
+            logger.info("  ENGINE INITIALIZATION PARTIAL (trading disabled)")
             logger.info(f"  Balance: ${self.current_balance:.2f}")
             logger.info(f"  Leverage: {self.leverage}x")
             logger.info(f"  Strategies: {len(self.strategies)}")
+            logger.info(f"  Initialized: {', '.join(initialized_components)}")
             logger.info("=" * 60)
-            
             return True
-            
-        except Exception as e:
-            logger.error(f"Engine initialization failed: {e}")
+        else:
             self.state = EngineState.ERROR
+            logger.error("Insufficient components initialized")
             return False
     
     def _init_gateway(self):
@@ -287,6 +365,35 @@ class TradingEngine:
         )
         
         logger.info("Risk management components initialized")
+
+    def _init_ml_service(self):
+        """Initialize ML Service for enhanced predictions"""
+        try:
+            # Prepare ML service config from engine config and environment
+            ml_config = {
+                'ml_enabled': self.ml_enabled,
+                'use_ml_predictions': os.getenv('USE_ML_PREDICTIONS', 'true').lower() == 'true',
+                'ml_model_path': os.getenv('ML_MODEL_PATH', './ml_models'),
+                'retrain_schedule': os.getenv('RETRAIN_SCHEDULE', 'daily'),
+                'ml_confidence_threshold': float(os.getenv('ML_CONFIDENCE_THRESHOLD', '0.6')),
+                'ml_model_type': os.getenv('ML_MODEL_TYPE', 'ensemble').lower(),
+                # Add any engine-specific ML configs
+                'symbol': self.symbol,
+                'trading_interval': self.trading_interval
+            }
+            
+            # Initialize ML service
+            self.ml_service = initialize_ml_service(ml_config)
+            
+            if self.ml_service and self.ml_service.is_initialized:
+                logger.info("ML Service initialized successfully")
+            else:
+                logger.warning("ML Service initialized but not fully functional")
+                
+        except Exception as e:
+            logger.error(f"Failed to initialize ML Service: {e}")
+            self.ml_service = None
+            raise
     
     def _configure_exchange(self):
         """Configure exchange settings (leverage, margin type)"""
@@ -389,39 +496,51 @@ class TradingEngine:
         if not can_trade:
             logger.debug(f"Circuit breaker blocking trade: {reason}")
             return
-        
+         
         # 2. Get current price
         try:
+            if self.gateway is None:
+                logger.debug("Gateway not available, skipping price fetch")
+                return
+            
             ticker = self.gateway.get_ticker(self.symbol)
             current_price = float(ticker.get('lastPrice', 0))
-            
+             
             if current_price <= 0:
                 logger.warning("Invalid price received")
                 return
-                
+                 
         except Exception as e:
             logger.error(f"Failed to get price: {e}")
             return
-        
+         
         # 3. Update strategies with current price
         volume = float(ticker.get('volume', 0))
-        
+         
+        # 3.5. Update ML history buffers
+        self.ml_price_history.append(current_price)
+        self.ml_volume_history.append(volume)
+        # Maintain buffer size
+        if len(self.ml_price_history) > self.max_ml_history:
+            self.ml_price_history.pop(0)
+            self.ml_volume_history.pop(0)
+         
         # 4. Update strategy router and get best strategy
         router_result = self.strategy_router.update(current_price, volume)
-        
+         
         # 5. Get signals from all strategies
         signals = self._collect_signals(current_price, volume)
-        
+         
         # 6. Execute trades based on signals
         if signals:
             self._process_signals(signals, current_price)
-        
+         
         # 7. Update existing positions (trailing stops)
         self._update_positions(current_price)
-        
+         
         # 8. Update risk metrics
         self._update_risk_metrics(current_price)
-        
+         
         # 9. Sync with exchange periodically
         if self.total_trades % 10 == 0:
             self._sync_positions()
@@ -469,23 +588,62 @@ class TradingEngine:
         # Only trade if we don't already have a position
         if self.symbol in self.open_positions:
             return
-        
+         
         # Find the strongest signal
         best_signal = max(signals, key=lambda s: s.confidence)
-        
-        # Require minimum confidence
+         
+        # Enhance signal with ML prediction if available and sufficient data
+        ml_confidence = 0.0
+        ml_agreement = False
+        if (self.ml_service and self.ml_service.is_initialized and 
+            len(self.ml_price_history) >= 50 and self.ml_enabled):
+            
+            try:
+                ml_prediction = self.ml_service.get_ml_prediction(
+                    np.array(self.ml_price_history),
+                    np.array(self.ml_volume_history)
+                )
+                
+                ml_confidence = ml_prediction.get('confidence', 0)
+                ml_signal_val = ml_prediction.get('signal', 0)
+                
+                if ml_confidence > 0.6:  # ML confident enough to consider
+                    if ml_signal_val != 0:  # ML has directional signal
+                        ml_direction = "LONG" if ml_signal_val > 0 else "SHORT"
+                        if ml_direction == best_signal.side:
+                            # ML agrees - boost confidence
+                            original_confidence = best_signal.confidence
+                            best_signal.confidence = min(1.0, best_signal.confidence + 0.2)
+                            ml_agreement = True
+                            logger.debug(f"ML agreement boosted confidence from {original_confidence:.2f} to {best_signal.confidence:.2f}")
+                        else:
+                            # ML disagrees - reduce confidence
+                            original_confidence = best_signal.confidence
+                            best_signal.confidence *= 0.5
+                            logger.debug(f"ML disagreement reduced confidence from {original_confidence:.2f} to {best_signal.confidence:.2f}")
+                    else:
+                        # ML uncertain - slight confidence reduction
+                        original_confidence = best_signal.confidence
+                        best_signal.confidence *= 0.9
+                        logger.debug(f"ML uncertainty reduced confidence from {original_confidence:.2f} to {best_signal.confidence:.2f}")
+                        
+            except Exception as e:
+                logger.warning(f"ML prediction failed: {e}")
+                # Continue with original signal
+         
+        # Require minimum confidence (after potential ML adjustment)
         if best_signal.confidence < 0.5:
-            logger.debug(f"Signal confidence too low: {best_signal.confidence:.2f}")
+            logger.debug(f"Signal confidence too low after ML adjustment: {best_signal.confidence:.2f}")
             return
-        
+         
         # Calculate position size using Kelly
         stop_loss_pct = 1.5  # 1.5% stop loss
-        
+         
         if best_signal.side == "LONG":
             stop_loss_price = current_price * (1 - stop_loss_pct / 100)
         else:
             stop_loss_price = current_price * (1 + stop_loss_pct / 100)
-        
+         
         # Use Kelly for position sizing
         quantity = self.kelly_sizer.calculate_position_size(
             entry_price=current_price,
@@ -494,41 +652,48 @@ class TradingEngine:
             avg_win=None,
             avg_loss=None
         )
-        
+         
         # Apply leverage
         quantity = quantity * self.leverage
-        
+         
         # Apply volatility adjustment
-        try:
-            klines = self.gateway.get_klines(self.symbol, interval="1m", limit=20)
-            if klines and len(klines) > 0:
-                last_kline = klines[-1]
-                high = float(last_kline[2])
-                low = float(last_kline[3])
-                close = float(last_kline[4])
-                
-                vol_metrics = self.volatility_sizer.update(high, low, close)
-                
-                # Reduce size in extreme volatility
-                if vol_metrics.volatility_regime == "EXTREME":
-                    quantity *= 0.25
-                    logger.warning("Extreme volatility - reducing position to 25%")
-                elif vol_metrics.volatility_regime == "HIGH":
-                    quantity *= 0.5
-                    logger.warning("High volatility - reducing position to 50%")
-        except Exception:
-            pass
-        
+        if self.gateway is None:
+            logger.debug("Gateway not available, skipping volatility adjustment")
+        else:
+            try:
+                klines = self.gateway.get_klines(self.symbol, interval="1m", limit=20)
+                if klines and len(klines) > 0:
+                    last_kline = klines[-1]
+                    high = float(last_kline[2])
+                    low = float(last_kline[3])
+                    close = float(last_kline[4])
+                      
+                    vol_metrics = self.volatility_sizer.update(high, low, close)
+                      
+                    # Reduce size in extreme volatility
+                    if vol_metrics.volatility_regime == "EXTREME":
+                        quantity *= 0.25
+                        logger.warning("Extreme volatility - reducing position to 25%")
+                    elif vol_metrics.volatility_regime == "HIGH":
+                        quantity *= 0.5
+                        logger.warning("High volatility - reducing position to 50%")
+            except Exception:
+                pass
+         
         # Check minimum quantity
-        min_qty = self.gateway.get_min_quantity(self.symbol)
-        if quantity < min_qty:
-            logger.debug(f"Position size too small: {quantity:.6f} < {min_qty}")
-            return
-        
+        if self.gateway is None:
+            logger.debug("Gateway not available, skipping quantity checks")
+        else:
+            min_qty = self.gateway.get_min_quantity(self.symbol)
+            if quantity < min_qty:
+                logger.debug(f"Position size too small: {quantity:.6f} < {min_qty}")
+                return
+         
         # Round quantity to exchange precision
-        precision = self.gateway.get_quantity_precision(self.symbol)
-        quantity = round(quantity, precision)
-        
+        if self.gateway is not None:
+            precision = self.gateway.get_quantity_precision(self.symbol)
+            quantity = round(quantity, precision)
+         
         # Execute trade
         self._execute_trade(best_signal, quantity, current_price, stop_loss_price)
     
@@ -538,6 +703,14 @@ class TradingEngine:
         from exchange.binance_gateway import OrderSide, OrderType
         
         try:
+            if self.gateway is None:
+                logger.warning("Cannot execute trade: gateway not available")
+                return
+            
+            if quantity <= 0:
+                logger.warning(f"Invalid quantity: {quantity}")
+                return
+            
             # Place market order
             side = OrderSide.BUY if signal.side == "LONG" else OrderSide.SELL
             
@@ -596,7 +769,7 @@ class TradingEngine:
                         pass
                         
         except Exception as e:
-            logger.error(f"Trade execution failed: {e}")
+            logger.error(f"Trade execution failed: {e}", exc_info=True)
     
     def _update_positions(self, current_price: float):
         """Update existing positions (check stops, take profits)"""
@@ -637,6 +810,12 @@ class TradingEngine:
         pos = self.open_positions[self.symbol]
         
         try:
+            if self.gateway is None:
+                logger.warning("Cannot close position: gateway not available")
+                # Still update local tracking even without exchange
+                self._close_position_local(exit_price, reason, pos)
+                return
+            
             # Close position on exchange
             close_side = OrderSide.SELL if pos['side'] == "LONG" else OrderSide.BUY
             result = self.gateway.place_market_order(
@@ -646,6 +825,20 @@ class TradingEngine:
                 reduce_only=True
             )
             
+            # Close position locally
+            self._close_position_local(exit_price, reason, pos)
+            
+        except Exception as e:
+            logger.error(f"Failed to close position: {e}", exc_info=True)
+            # Try to close locally anyway
+            try:
+                self._close_position_local(exit_price, reason, pos)
+            except Exception as local_error:
+                logger.error(f"Failed to close position locally: {local_error}")
+    
+    def _close_position_local(self, exit_price: float, reason: str, pos: Dict):
+        """Close position locally (update stats without exchange call)"""
+        try:
             # Calculate PnL
             if pos['side'] == "LONG":
                 pnl = (exit_price - pos['entry_price']) * pos['quantity']
@@ -707,7 +900,7 @@ class TradingEngine:
             del self.open_positions[self.symbol]
             
         except Exception as e:
-            logger.error(f"Failed to close position: {e}")
+            logger.error(f"Failed to close position locally: {e}", exc_info=True)
     
     def _update_risk_metrics(self, current_price: float):
         """Update all risk metrics"""
@@ -728,38 +921,54 @@ class TradingEngine:
     # ==================== PUBLIC API ====================
     
     def get_status(self) -> EngineStatus:
-        """Get engine status"""
+        """Get engine status with safe defaults for missing components"""
         win_rate = (self.winning_trades / max(1, self.winning_trades + self.losing_trades)) * 100
         
         daily_pnl_percent = 0
-        if self.circuit_breaker.starting_balance > 0:
+        if self.circuit_breaker and self.circuit_breaker.starting_balance > 0:
             daily_pnl_percent = (self.daily_pnl / self.circuit_breaker.starting_balance) * 100
         
         # Get Kelly stats
-        kelly_stats = self.kelly_sizer.get_statistics()
-        kelly_fraction = kelly_stats.get('kelly_fraction', 0)
+        kelly_fraction = 0
+        if self.kelly_sizer:
+            try:
+                kelly_stats = self.kelly_sizer.get_statistics()
+                kelly_fraction = kelly_stats.get('kelly_fraction', 0)
+            except Exception:
+                pass
         
         # Get VaR
         var_95 = 0
         var_95_percent = 0
         risk_level = "UNKNOWN"
-        try:
-            if len(self.var_calculator._returns) >= 10:
-                var_result = self.var_calculator.calculate_full_var(self.current_balance)
-                var_95 = var_result.var_95
-                var_95_percent = (var_95 / self.current_balance * 100) if self.current_balance > 0 else 0
-                risk_level, _ = self.var_calculator.get_risk_level(self.current_balance)
-        except Exception:
-            pass
+        if self.var_calculator:
+            try:
+                if len(self.var_calculator._returns) >= 10:
+                    var_result = self.var_calculator.calculate_full_var(self.current_balance)
+                    var_95 = var_result.var_95
+                    var_95_percent = (var_95 / self.current_balance * 100) if self.current_balance > 0 else 0
+                    risk_level, _ = self.var_calculator.get_risk_level(self.current_balance)
+            except Exception:
+                pass
         
         # Get strategy info
         regime = "UNKNOWN"
         best_strategy = "none"
         if self.strategy_router:
-            regime = self.strategy_router.get_regime().value
-            best_strategy = self.strategy_router.get_best_strategy()
+            try:
+                regime = self.strategy_router.get_regime().value
+                best_strategy = self.strategy_router.get_best_strategy()
+            except Exception:
+                pass
         
-        can_trade, _ = self.circuit_breaker.can_trade()
+        can_trade = False
+        circuit_breaker_state = "UNKNOWN"
+        if self.circuit_breaker:
+            try:
+                can_trade, _ = self.circuit_breaker.can_trade()
+                circuit_breaker_state = self.circuit_breaker.state.value
+            except Exception:
+                pass
         
         return EngineStatus(
             state=self.state.value,
@@ -770,7 +979,7 @@ class TradingEngine:
             daily_pnl_percent=daily_pnl_percent,
             win_rate=win_rate,
             total_trades=self.total_trades,
-            circuit_breaker_state=self.circuit_breaker.state.value,
+            circuit_breaker_state=circuit_breaker_state,
             can_trade=can_trade,
             current_regime=regime,
             best_strategy=best_strategy,
@@ -790,28 +999,49 @@ class TradingEngine:
         return self.trade_pnls.copy()
     
     def get_risk_report(self) -> Dict:
-        """Get comprehensive risk report"""
+        """Get comprehensive risk report with safe defaults"""
         status = self.get_status()
         
         # Kelly stats
-        kelly_stats = self.kelly_sizer.get_statistics()
+        kelly_stats = {}
+        if self.kelly_sizer:
+            try:
+                kelly_stats = self.kelly_sizer.get_statistics()
+            except Exception:
+                pass
         
         # VaR report
         var_report = {}
-        try:
-            if len(self.var_calculator._returns) >= 10:
-                var_report = self.var_calculator.get_risk_report(self.current_balance)
-        except Exception:
-            pass
+        if self.var_calculator:
+            try:
+                if len(self.var_calculator._returns) >= 10:
+                    var_report = self.var_calculator.get_risk_report(self.current_balance)
+            except Exception:
+                pass
         
         # Circuit breaker
-        cb_status = self.circuit_breaker.get_status()
+        cb_status = {}
+        if self.circuit_breaker:
+            try:
+                cb_status = self.circuit_breaker.get_status()
+            except Exception:
+                pass
         
         # Trailing stops
-        ts_stats = self.trailing_stop.get_statistics()
+        ts_stats = {}
+        if self.trailing_stop:
+            try:
+                ts_stats = self.trailing_stop.get_statistics()
+            except Exception:
+                pass
         
         # Volatility
-        vol_stats = self.volatility_sizer.get_statistics()
+        vol_stats = {}
+        if self.volatility_sizer:
+            try:
+                vol_stats = self.volatility_sizer.get_statistics()
+            except Exception:
+                pass
         
         return {
             'engine_state': status.state,
@@ -879,14 +1109,23 @@ class TradingEngine:
     
     def set_leverage(self, leverage: int) -> bool:
         """Set trading leverage"""
-        try:
-            self.gateway.set_leverage(self.symbol, leverage)
+        if self.gateway:
+            try:
+                self.gateway.set_leverage(self.symbol, leverage)
+                self.leverage = leverage
+                logger.info(f"Leverage changed to {leverage}x")
+                return True
+            except Exception as e:
+                logger.error(f"Failed to set leverage on exchange: {e}")
+                # Still update internal leverage for demo mode
+                self.leverage = leverage
+                logger.info(f"Internal leverage updated to {leverage}x (exchange update failed)")
+                return True
+        else:
+            # No gateway, just update internal value
             self.leverage = leverage
-            logger.info(f"Leverage changed to {leverage}x")
+            logger.info(f"Leverage changed to {leverage}x (demo mode)")
             return True
-        except Exception as e:
-            logger.error(f"Failed to set leverage: {e}")
-            return False
 
 
 # Global engine instance

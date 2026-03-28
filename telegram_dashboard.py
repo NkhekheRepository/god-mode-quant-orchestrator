@@ -252,6 +252,220 @@ class TelegramDashboard:
         else:
             return "0.00", TelegramEmoji.ENTRY.value
     
+    def _format_error(self, command: str, error: Exception) -> str:
+        """Format error message for user"""
+        return f"⚠️ <b>{command.upper()} ERROR</b>\n\nUnable to retrieve data. Please try again later."
+    
+    def handle_command(self, command: str, args: Optional[List[str]] = None) -> str:
+        """Handle incoming bot commands"""
+        if args is None:
+            args = []
+        
+        command_map = {
+            "start": self._get_start_command,
+            "help": self._get_help_command,
+            "status": self._get_status_command,
+            "balance": self._get_balance_command,
+            "positions": self._get_positions_command,
+            "portfolio": self._get_portfolio_command,
+            "stop": self._get_stop_command,
+            "cancel": self._get_cancel_command,
+            "engine": self._get_engine_command,
+            "leverage": self._get_leverage_command,
+            "kelly": self._get_kelly_command,
+            "strategies": self._get_strategies_command,
+            "signal": self._get_signal_command,
+            "orders": self._get_orders_command,
+            "var": self._get_var_command,
+        }
+        
+        handler = command_map.get(command.lower())
+        if handler:
+            try:
+                return handler(args)
+            except Exception as e:
+                logger.error(f"Error handling /{command}: {e}")
+                return self._format_error(command, e)
+        
+        return self._get_unknown_command(command)
+    
+    def _get_status_command(self, args: List[str]) -> str:
+        """Get system status"""
+        try:
+            from risk_management import risk_manager
+            portfolio = risk_manager.portfolio
+            return (
+                f"⚡ <b>SYSTEM STATUS</b>\n\n"
+                f"<b>Balance:</b> ${portfolio.balance:,.2f}\n"
+                f"<b>Positions:</b> {portfolio.position_count}\n"
+                f"<b>P&L:</b> ${portfolio.total_unrealized_pnl:,.2f}\n"
+                f"<b>Equity:</b> ${portfolio.equity:,.2f}"
+            )
+        except Exception as e:
+            return self._format_error("status", e)
+    
+    def _get_portfolio_command(self, args: List[str]) -> str:
+        """Get portfolio info"""
+        return self._get_status_command(args)
+    
+    def _get_help_command(self, args: List[str]) -> str:
+        """Get help message"""
+        return (
+            f"📖 <b>AVAILABLE COMMANDS</b>\n\n"
+            f"/start - Initialize bot\n"
+            f"/status - System status\n"
+            f"/balance - Account balance\n"
+            f"/positions - Open positions\n"
+            f"/portfolio - Portfolio details\n"
+            f"/stop - Stop trading\n"
+            f"/cancel - Cancel pending orders\n"
+            f"/engine - Engine control\n"
+            f"/leverage [x] - Set leverage\n"
+            f"/kelly - Kelly criterion info\n"
+            f"/strategies - List strategies\n"
+            f"/signal - Get signal\n"
+            f"/orders - Active orders\n"
+            f"/var - Value at Risk\n"
+            f"/help - This help message"
+        )
+
+    def _get_start_command(self, args: List[str]) -> str:
+        """Handle /start command - welcome message"""
+        return (
+            f"🤖 <b>GOD MODE QUANT ORCHESTRATOR</b>\n\n"
+            f"Welcome! The trading bot is active.\n\n"
+            f"<b>Quick Start:</b>\n"
+            f"  /status - Check system status\n"
+            f"  /balance - View account balance\n"
+            f"  /positions - View open positions\n"
+            f"  /help - Show all commands\n\n"
+            f"<i>Monitoring active. Alerts will be sent automatically.</i>"
+        )
+
+    def _get_balance_command(self, args: List[str]) -> str:
+        """Get account balance"""
+        try:
+            from trading_engine import get_trading_engine
+            engine = get_trading_engine()
+
+            if engine:
+                status = engine.get_status()
+                return (
+                    f"💰 <b>ACCOUNT BALANCE</b>\n\n"
+                    f"<b>Balance:</b> ${status.balance:,.2f}\n"
+                    f"<b>Equity:</b> ${status.balance + status.total_pnl:,.2f}\n"
+                    f"<b>Unrealized P&L:</b> ${status.total_pnl:+,.2f}\n"
+                    f"<b>Leverage:</b> {status.leverage}x\n"
+                    f"<b>Available Margin:</b> ${status.balance * 0.8:,.2f}"
+                )
+
+            # Fallback to risk_manager
+            from risk_management import risk_manager
+            portfolio = risk_manager.portfolio
+            return (
+                f"💰 <b>ACCOUNT BALANCE</b>\n\n"
+                f"<b>Balance:</b> ${portfolio.balance:,.2f}\n"
+                f"<b>Equity:</b> ${portfolio.equity:,.2f}\n"
+                f"<b>Unrealized P&L:</b> ${portfolio.total_unrealized_pnl:+,.2f}\n"
+                f"<b>Positions:</b> {portfolio.position_count}"
+            )
+        except Exception as e:
+            return f"⚠️ <b>BALANCE UNAVAILABLE</b>\n\n{str(e)}"
+
+    def _get_positions_command(self, args: List[str]) -> str:
+        """Get open positions"""
+        try:
+            from trading_engine import get_trading_engine
+            engine = get_trading_engine()
+
+            if engine is None:
+                return "⚠️ <b>ENGINE NOT INITIALIZED</b>\n\nUse /start to initialize."
+
+            positions = engine.get_positions()
+
+            if not positions:
+                return (
+                    f"📊 <b>OPEN POSITIONS</b>\n\n"
+                    f"No open positions.\n"
+                    f"Waiting for trading signals..."
+                )
+
+            message = f"📊 <b>OPEN POSITIONS</b>\n\n"
+            for symbol, pos in positions.items():
+                side = pos.get('side', 'UNKNOWN')
+                emoji = "📈" if side == "LONG" else "📉"
+                pnl = pos.get('unrealized_pnl', 0)
+                pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+
+                message += (
+                    f"{emoji} <b>{symbol}</b>\n"
+                    f"  Side: {side}\n"
+                    f"  Qty: {pos.get('quantity', 0):.6f}\n"
+                    f"  Entry: {self._format_price(pos.get('entry_price', 0))}\n"
+                    f"  SL: {self._format_price(pos.get('stop_loss', 0))}\n"
+                    f"  TP: {self._format_price(pos.get('take_profit', 0))}\n"
+                    f"  {pnl_emoji} P&L: ${pnl:+,.2f}\n\n"
+                )
+
+            return message
+        except Exception as e:
+            return f"⚠️ <b>POSITIONS UNAVAILABLE</b>\n\n{str(e)}"
+
+    def _get_cancel_command(self, args: List[str]) -> str:
+        """Cancel pending orders"""
+        try:
+            from trading_engine import get_trading_engine
+            engine = get_trading_engine()
+
+            if engine is None:
+                return "⚠️ <b>ENGINE NOT INITIALIZED</b>\n\nUse /start to initialize."
+
+            # Cancel all pending orders
+            if hasattr(engine, 'order_manager') and engine.order_manager:
+                stats = engine.order_manager.get_statistics()
+                pending = stats.get('pending_orders', 0)
+
+                if pending == 0:
+                    return (
+                        f"✅ <b>NO PENDING ORDERS</b>\n\n"
+                        f"There are no pending orders to cancel."
+                    )
+
+                # Cancel pending orders
+                cancelled = engine.order_manager.cancel_all_orders()
+                return (
+                    f"🛑 <b>ORDERS CANCELLED</b>\n\n"
+                    f"Cancelled {cancelled} pending order(s)."
+                )
+
+            return (
+                f"⚠️ <b>CANCEL UNAVAILABLE</b>\n\n"
+                f"Order manager not available."
+            )
+        except Exception as e:
+            return f"⚠️ <b>CANCEL ERROR</b>\n\n{str(e)}"
+
+    def send_message_to_chat(self, chat_id: int, text: str, parse_mode: str = 'HTML') -> bool:
+        """Send message to a specific chat (for bot handler responses)"""
+        url = f"{self.api_base}/sendMessage"
+        payload = {
+            'chat_id': chat_id,
+            'text': text,
+            'parse_mode': parse_mode
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=30)
+            response.raise_for_status()
+            result = response.json()
+            if result.get('ok'):
+                return True
+            else:
+                logger.error(f"Telegram API error: {result}")
+                return False
+        except Exception as e:
+            logger.error(f"Error sending message to chat {chat_id}: {e}")
+            return False
+    
     def _send_message(self, text: str, parse_mode: str = 'HTML',
                      reply_markup: Optional[Dict] = None) -> bool:
         """Send message to Telegram"""
@@ -275,696 +489,21 @@ class TelegramDashboard:
             else:
                 logger.error(f"Telegram API error: {result}")
                 return False
-                
+            
         except Exception as e:
-            logger.error(f"Failed to send Telegram message: {e}")
+            logger.error(f"Error sending Telegram message: {e}")
             return False
     
     def _get_inline_keyboard(self) -> Dict:
-        """Get standard inline keyboard with quick actions"""
+        """Generate inline keyboard with action buttons"""
         return {
             "inline_keyboard": [
-                [
-                    {"text": "\U0001F4C8 Status", "callback_data": "cmd_status"},
-                    {"text": "\U0001F4CA Positions", "callback_data": "cmd_positions"},
-                    {"text": "\U0001F3AF Signal", "callback_data": "cmd_signal"}
-                ],
-                [
-                    {"text": "\U0001F6E1 Risk", "callback_data": "cmd_risk"},
-                    {"text": "\U0001F4C8 VaR", "callback_data": "cmd_var"},
-                    {"text": "\U0001F3AF Kelly", "callback_data": "cmd_kelly"}
-                ],
-                [
-                    {"text": "\U0001F916 Engine", "callback_data": "cmd_engine"},
-                    {"text": "\u26A1 Leverage", "callback_data": "cmd_leverage"},
-                    {"text": "\U0001F4CA Strategies", "callback_data": "cmd_strategies"}
-                ],
-                [
-                    {"text": "\U0001F4B0 P&L", "callback_data": "cmd_pnl"},
-                    {"text": "\U0001F4CB Orders", "callback_data": "cmd_orders"},
-                    {"text": "\U0001F4CB Summary", "callback_data": "cmd_summary"}
-                ],
-                [
-                    {"text": "\U0001F4E2 Alerts On", "callback_data": "alerts_on"},
-                    {"text": "\U0001F6AB Alerts Off", "callback_data": "alerts_off"}
-                ]
+                [{"text": "📊 Portfolio", "callback_data": "portfolio"}],
+                [{"text": "📈 P&L", "callback_data": "pnl"}],
+                [{"text": "⚙️ Settings", "callback_data": "settings"}],
+                [{"text": "🛑 Stop", "callback_data": "stop"}]
             ]
         }
-    
-    # ==================== TRADE NOTIFICATIONS ====================
-    
-    def send_trade_entry(self, trade: TradeNotification) -> bool:
-        """Send trade entry notification with detailed info"""
-        emoji = TelegramEmoji.LONG.value if trade.side.upper() == "LONG" else TelegramEmoji.SHORT.value
-        
-        message = (
-            f"{emoji} <b>TRADE ENTRY</b>\n\n"
-            f"<b>Symbol:</b> {trade.symbol}\n"
-            f"<b>Side:</b> {trade.side.upper()}\n"
-            f"<b>Quantity:</b> {trade.quantity:.6f}\n"
-            f"<b>Entry Price:</b> {self._format_price(trade.entry_price)}\n"
-            f"<b>Strategy:</b> {trade.strategy}\n"
-        )
-        
-        if trade.stop_loss:
-            message += f"<b>Stop Loss:</b> {self._format_price(trade.stop_loss)}\n"
-        if trade.take_profit:
-            message += f"<b>Take Profit:</b> {self._format_price(trade.take_profit)}\n"
-        
-        message += f"\n\U000023F0 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        # Store in history
-        with self._lock:
-            self.trade_history.append(trade)
-            self.daily_stats["trades"] += 1
-        
-        # Update metrics
-        self._increment_metric(
-            self.telegram_messages_sent,
-            {"message_type": "trade_entry", "status": "sent"}
-        )
-        self._set_metric(
-            self.telegram_last_message_time,
-            {"message_type": "trade_entry"},
-            time.time()
-        )
-        
-        return self._send_message(message, reply_markup=self._get_inline_keyboard())
-    
-    def send_trade_exit(self, trade: TradeNotification) -> bool:
-        """Send trade exit notification with P&L"""
-        pnl_str, pnl_emoji = self._format_pnl(trade.pnl or 0)
-        
-        message = (
-            f"{pnl_emoji} <b>TRADE EXIT</b>\n\n"
-            f"<b>Symbol:</b> {trade.symbol}\n"
-            f"<b>Side:</b> {trade.side.upper()}\n"
-            f"<b>Quantity:</b> {trade.quantity:.6f}\n"
-            f"<b>Entry Price:</b> {self._format_price(trade.entry_price)}\n"
-            f"<b>Exit Price:</b> {self._format_price(trade.current_price or trade.entry_price)}\n"
-            f"<b>P&L:</b> {pnl_str}"
-        )
-        
-        if trade.pnl_percent is not None:
-            pct_str = f"+{trade.pnl_percent:.2f}%" if trade.pnl_percent > 0 else f"{trade.pnl_percent:.2f}%"
-            message += f" ({pct_str})"
-        
-        message += f"\n\n\U000023F0 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        # Update daily stats
-        with self._lock:
-            if trade.pnl and trade.pnl > 0:
-                self.daily_stats["profitable"] += 1
-            else:
-                self.daily_stats["losing"] += 1
-            if trade.pnl:
-                self.daily_stats["pnl"] += trade.pnl
-        
-        # Update metrics
-        self._increment_metric(
-            self.telegram_messages_sent,
-            {"message_type": "trade_exit", "status": "sent"}
-        )
-        
-        return self._send_message(message, reply_markup=self._get_inline_keyboard())
-    
-    # ==================== RISK ALERTS ====================
-    
-    def send_risk_alert(self, alert: RiskAlertNotification) -> bool:
-        """Send risk alert notification"""
-        severity_emoji = {
-            "LOW": TelegramEmoji.WARNING.value,
-            "MEDIUM": TelegramEmoji.WARNING.value,
-            "HIGH": TelegramEmoji.DANGER.value,
-            "CRITICAL": "\U0001F6A8"
-        }.get(alert.severity.upper(), TelegramEmoji.WARNING.value)
-        
-        color = {
-            "LOW": "#FFA500",
-            "MEDIUM": "#FF8C00",
-            "HIGH": "#FF4500",
-            "CRITICAL": "#FF0000"
-        }.get(alert.severity.upper(), "#FFA500")
-        
-        message = (
-            f"{severity_emoji} <b>RISK ALERT</b>\n\n"
-            f"<b>Type:</b> {alert.alert_type}\n"
-            f"<b>Severity:</b> <code>{alert.severity.upper()}</code>\n\n"
-            f"<b>Message:</b> {alert.message}\n"
-        )
-        
-        if alert.details:
-            message += "\n<b>Details:</b>\n"
-            for key, value in alert.details.items():
-                message += f"  \u2022 {key}: {value}\n"
-        
-        message += f"\n\U000023F0 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        # Check cooldown before sending
-        alert_type_key = f"risk_{alert.alert_type}"
-        if not self._should_send_alert(alert_type_key):
-            logger.info(f"Risk alert rate limited: {alert.alert_type}")
-            return False
-        
-        # Update metrics
-        self._increment_metric(
-            self.telegram_messages_sent,
-            {"message_type": "risk_alert", "status": "sent"}
-        )
-        self._increment_metric(
-            self.risk_alert_count,
-            {"alert_type": alert.alert_type, "severity": alert.severity.lower()}
-        )
-        
-        return self._send_message(message, reply_markup=self._get_inline_keyboard())
-    
-    def check_and_send_position_limit_alert(self, symbol: str, position_risk: float) -> bool:
-        """Check position risk limit and send alert if exceeded"""
-        if position_risk > self.alert_thresholds["max_position_risk"]:
-            alert = RiskAlertNotification(
-                alert_type="position_limit",
-                severity="HIGH" if position_risk > self.alert_thresholds["max_position_risk"] * 2 else "MEDIUM",
-                message=f"Position {symbol} risk exceeds limit",
-                details={
-                    "position_risk_percent": f"{position_risk:.2f}%",
-                    "limit": f"{self.alert_thresholds['max_position_risk']:.2f}%"
-                }
-            )
-            return self.send_risk_alert(alert)
-        return False
-    
-    def check_and_send_drawdown_alert(self, current_drawdown: float, portfolio_value: float) -> bool:
-        """Check drawdown and send alert if limit exceeded"""
-        if current_drawdown > self.alert_thresholds["max_drawdown"]:
-            severity = "CRITICAL" if current_drawdown > self.alert_thresholds["max_drawdown"] * 1.5 else "HIGH"
-            alert = RiskAlertNotification(
-                alert_type="drawdown",
-                severity=severity,
-                message=f"Portfolio drawdown exceeds limit",
-                details={
-                    "current_drawdown": f"{current_drawdown:.2f}%",
-                    "limit": f"{self.alert_thresholds['max_drawdown']:.2f}%",
-                    "portfolio_value": self._format_price(portfolio_value)
-                }
-            )
-            return self.send_risk_alert(alert)
-        return False
-    
-    def check_and_send_portfolio_risk_alert(self, portfolio_risk: float) -> bool:
-        """Check portfolio risk and send alert if exceeded"""
-        if portfolio_risk > self.alert_thresholds["max_portfolio_risk"]:
-            alert = RiskAlertNotification(
-                alert_type="portfolio_risk",
-                severity="HIGH",
-                message=f"Total portfolio risk exceeds limit",
-                details={
-                    "total_risk_percent": f"{portfolio_risk:.2f}%",
-                    "limit": f"{self.alert_thresholds['max_portfolio_risk']:.2f}%"
-                }
-            )
-            return self.send_risk_alert(alert)
-        return False
-    
-    # ==================== TRUST SCORE NOTIFICATIONS ====================
-    
-    def send_trust_change_alert(self, change: TrustChangeNotification) -> bool:
-        """Send trust score change notification"""
-        if change.old_score == change.new_score:
-            return False
-        
-        # Determine severity based on score level
-        if change.new_score < self.alert_thresholds["trust_score_critical"]:
-            severity_emoji = TelegramEmoji.DANGER.value
-            severity = "CRITICAL"
-        elif change.new_score < self.alert_thresholds["trust_score_low"]:
-            severity_emoji = TelegramEmoji.WARNING.value
-            severity = "HIGH"
-        else:
-            severity_emoji = TelegramEmoji.TRUST_MED.value
-            severity = "LOW"
-        
-        diff = change.new_score - change.old_score
-        diff_str = f"+{diff:.1f}" if diff > 0 else f"{diff:.1f}"
-        
-        message = (
-            f"{severity_emoji} <b>TRUST SCORE CHANGE</b>\n\n"
-            f"<b>Service:</b> {change.service_or_user}\n"
-            f"<b>Old Score:</b> {change.old_score:.1f}\n"
-            f"<b>New Score:</b> <code>{change.new_score:.1f}</code>\n"
-            f"<b>Change:</b> {diff_str}\n"
-            f"<b>Reason:</b> {change.change_reason}\n"
-        )
-        
-        if change.new_score < self.alert_thresholds["trust_score_low"]:
-            message += f"\n\U000026A0 <b>Action Required:</b> Trust score below threshold!"
-        
-        message += f"\n\U000023F0 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        
-        # Only send alert if significant change or below threshold
-        if abs(diff) > 5 or change.new_score < self.alert_thresholds["trust_score_low"]:
-            self._increment_metric(
-                self.telegram_messages_sent,
-                {"message_type": "trust_change", "status": "sent"}
-            )
-            return self._send_message(message, reply_markup=self._get_inline_keyboard())
-        return False
-    
-    def check_trust_score_change(self, service_or_user: str, new_score: float):
-        """Check if trust score changed significantly and send notification"""
-        with self._lock:
-            old_score = self.last_trust_score.get(service_or_user, new_score)
-            
-            if old_score != new_score:
-                change = TrustChangeNotification(
-                    service_or_user=service_or_user,
-                    old_score=old_score,
-                    new_score=new_score,
-                    change_reason="Trust score updated"
-                )
-                self.last_trust_score[service_or_user] = new_score
-                
-                # Update metrics
-                self._set_metric(
-                    self.trust_score_gauge,
-                    value=new_score
-                )
-                
-                return self.send_trust_change_alert(change)
-        return False
-    
-    # ==================== SUMMARY REPORTS ====================
-    
-    def send_daily_summary(self, risk_report: Optional[Dict] = None,
-                          trust_score: Optional[float] = None) -> bool:
-        """Send daily summary report"""
-        with self._lock:
-            stats = self.daily_stats.copy()
-        
-        # Calculate win rate
-        total_trades = stats.get("trades", 0)
-        win_rate = (stats.get("profitable", 0) / total_trades * 100) if total_trades > 0 else 0
-        
-        # Get P&L
-        pnl = stats.get("pnl", 0)
-        pnl_str, pnl_emoji = self._format_pnl(pnl)
-        
-        message = (
-            f"\U0001F4CA <b>DAILY SUMMARY</b>\n\n"
-            f"<b>Date:</b> {datetime.now().strftime('%Y-%m-%d')}\n"
-            f"<b>Time:</b> {datetime.now().strftime('%H:%M:%S')}\n\n"
-            f"<b>Trades:</b> {total_trades}\n"
-            f"  \u2705 Profitable: {stats.get('profitable', 0)}\n"
-            f"  \u274C Losing: {stats.get('losing', 0)}\n"
-            f"  \U0001F3AF Win Rate: {win_rate:.1f}%\n\n"
-            f"<b>P&L:</b> {pnl_emoji} {pnl_str}\n"
-        )
-        
-        if risk_report:
-            portfolio = risk_report.get("portfolio", {})
-            message += (
-                f"\n<b>Portfolio:</b>\n"
-                f"  Value: {self._format_price(portfolio.get('total_value', 0))}\n"
-                f"  Positions: {portfolio.get('position_count', 0)}\n"
-                f"  Unrealized P&L: {self._format_price(portfolio.get('total_unrealized_pnl', 0))}\n"
-                f"  Max Drawdown: {portfolio.get('max_drawdown', 0):.2f}%\n"
-            )
-        
-        if trust_score is not None:
-            trust_emoji = (
-                TelegramEmoji.TRUST_HIGH.value if trust_score > 70
-                else TelegramEmoji.TRUST_MED.value if trust_score > 40
-                else TelegramEmoji.TRUST_LOW.value
-            )
-            message += f"\n{trust_emoji} <b>Trust Score:</b> {trust_score:.1f}"
-        
-        message += f"\n\n\U0001F4E2 Next update at midnight"
-        
-        self._increment_metric(
-            self.telegram_messages_sent,
-            {"message_type": "daily_summary", "status": "sent"}
-        )
-        
-        return self._send_message(message, reply_markup=self._get_inline_keyboard())
-    
-    def send_weekly_summary(self, risk_report: Optional[Dict] = None) -> bool:
-        """Send weekly summary report"""
-        with self._lock:
-            stats = self.daily_stats.copy()
-        
-        message = (
-            f"\U0001F4CA <b>WEEKLY SUMMARY</b>\n\n"
-            f"<b>Week:</b> {datetime.now().strftime('%Y-W%W')}\n"
-            f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-            f"<b>This Week's Stats:</b>\n"
-            f"  Total Trades: {stats.get('trades', 0)}\n"
-            f"  Profitable: {stats.get('profitable', 0)}\n"
-            f"  Losing: {stats.get('losing', 0)}\n"
-            f"  Total P&L: {self._format_price(stats.get('pnl', 0))}\n"
-        )
-        
-        if risk_report:
-            portfolio = risk_report.get("portfolio", {})
-            message += (
-                f"\n<b>Current Portfolio:</b>\n"
-                f"  Value: {self._format_price(portfolio.get('total_value', 0))}\n"
-                f"  Positions: {portfolio.get('position_count', 0)}\n"
-                f"  Max Drawdown: {portfolio.get('max_drawdown', 0):.2f}%\n"
-            )
-        
-        message += f"\n\U0001F4E2 Have a great week!"
-        
-        self._increment_metric(
-            self.telegram_messages_sent,
-            {"message_type": "weekly_summary", "status": "sent"}
-        )
-        
-        return self._send_message(message, reply_markup=self._get_inline_keyboard())
-    
-    # ==================== COMMAND HANDLERS ====================
-    
-    def handle_command(self, command: str, args: List[str] = None) -> str:
-        """Handle incoming Telegram commands"""
-        command = command.lower().strip('/')
-        
-        # Update command metrics
-        self._increment_metric(
-            self.telegram_command_count,
-            {"command": command}
-        )
-        
-        handlers = {
-            'status': self._get_status_command,
-            'positions': self._get_positions_command,
-            'risk': self._get_risk_command,
-            'trust': self._get_trust_command,
-            'help': self._get_help_command,
-            'pnl': self._get_pnl_command,
-            'summary': self._get_summary_command,
-            'alerts': self._get_alerts_command,
-            'leverage': self._get_leverage_command,
-            'kelly': self._get_kelly_command,
-            'strategies': self._get_strategies_command,
-            'signal': self._get_signal_command,
-            'orders': self._get_orders_command,
-            'var': self._get_var_command,
-            'engine': self._get_engine_command,
-            'start': self._get_start_command,
-            'stop': self._get_stop_command,
-        }
-        
-        handler = handlers.get(command)
-        if handler:
-            return handler(args)
-        else:
-            return self._get_unknown_command(command)
-    
-    def _get_status_command(self, args: List[str]) -> str:
-        """Get overall status"""
-        from risk_management import risk_manager
-        from security.trust_scorer import trust_scorer
-        
-        portfolio = risk_manager.portfolio
-        trust_score = trust_scorer.get_trust_score("orchestrator:system")
-        
-        pnl = portfolio.total_unrealized_pnl
-        pnl_str, pnl_emoji = self._format_pnl(pnl)
-        
-        should_stop, reasons = risk_manager.should_stop_trading()
-        
-        message = (
-            f"\U0001F916 <b>SYSTEM STATUS</b>\n\n"
-            f"<b>Portfolio Value:</b> {self._format_price(portfolio.total_value)}\n"
-            f"<b>Unrealized P&L:</b> {pnl_emoji} {pnl_str}\n"
-            f"<b>Positions:</b> {portfolio.position_count}\n"
-            f"<b>Cash:</b> {self._format_price(portfolio.cash)}\n"
-            f"<b>Max Drawdown:</b> {portfolio.max_drawdown:.2f}%\n\n"
-            f"{TelegramEmoji.TRUST_HIGH.value if trust_score > 70 else TelegramEmoji.TRUST_MED.value if trust_score > 40 else TelegramEmoji.TRUST_LOW.value} "
-            f"<b>Trust Score:</b> {trust_score:.1f}\n\n"
-        )
-        
-        if should_stop:
-            message += f"\U0001F6AB <b>TRADING PAUSED</b>\n"
-            for reason in reasons:
-                message += f"  \u2022 {reason}\n"
-        else:
-            message += f"\U0001F4B0 <b>Trading Active</b>"
-        
-        return message
-    
-    def _get_positions_command(self, args: List[str]) -> str:
-        """Get open positions"""
-        from risk_management import risk_manager
-        
-        positions = risk_manager.portfolio.positions
-        
-        if not positions:
-            return f"\U0001F4CB <b>OPEN POSITIONS</b>\n\nNo open positions currently."
-        
-        message = f"\U0001F4CB <b>OPEN POSITIONS</b> ({len(positions)})\n\n"
-        
-        for symbol, pos in positions.items():
-            side = "LONG" if pos.quantity > 0 else "SHORT"
-            emoji = TelegramEmoji.LONG.value if pos.quantity > 0 else TelegramEmoji.SHORT.value
-            
-            pnl_str, pnl_emoji = self._format_pnl(pos.unrealized_pnl)
-            pct = pos.unrealized_pnl_percent
-            
-            message += (
-                f"{emoji} <b>{symbol}</b>\n"
-                f"  Side: {side} | Qty: {abs(pos.quantity):.4f}\n"
-                f"  Entry: {self._format_price(pos.entry_price)}\n"
-                f"  Current: {self._format_price(pos.current_price)}\n"
-                f"  P&L: {pnl_emoji} {pnl_str} ({pct:+.2f}%)\n"
-            )
-            
-            if pos.stop_loss:
-                message += f"  SL: {self._format_price(pos.stop_loss)} | "
-            if pos.take_profit:
-                message += f"TP: {self._format_price(pos.take_profit)}\n"
-            
-            message += "\n"
-        
-        return message
-    
-    def _get_risk_command(self, args: List[str]) -> str:
-        """Get risk report"""
-        from risk_management import risk_manager
-        
-        report = risk_manager.get_risk_report()
-        
-        portfolio = report["portfolio"]
-        limits = report["risk_limits"]
-        status = report["risk_status"]
-        
-        message = (
-            f"\U0001F6E1 <b>RISK REPORT</b>\n\n"
-            f"<b>Portfolio Risk:</b> {portfolio['total_risk_percent']:.2f}%\n"
-            f"  Limit: {limits['max_portfolio_risk_percent']:.2f}%\n"
-            f"  Utilization: {status.get('portfolio_risk_utilization', 0):.1f}%\n\n"
-            f"<b>Max Drawdown:</b> {portfolio['max_drawdown']:.2f}%\n"
-            f"  Limit: {limits['max_drawdown_percent']:.2f}%\n\n"
-            f"<b>Position Limits:</b>\n"
-            f"  Max per position: {limits['max_position_risk_percent']:.2f}%\n"
-        )
-        
-        if portfolio.get('positions'):
-            message += f"\n<b>Positions at Risk:</b>\n"
-            for symbol, pos in portfolio['positions'].items():
-                if pos['risk_percent'] > 0:
-                    message += f"  \u2022 {symbol}: {pos['risk_percent']:.2f}%\n"
-        
-        if status['should_stop_trading']:
-            message += f"\n\U0001F6AB <b>TRADING STOPPED</b>\n"
-            for reason in status['stop_reasons']:
-                message += f"  \u2022 {reason}\n"
-        else:
-            message += f"\n\U0001F4B0 <b>Risk OK</b>"
-        
-        return message
-    
-    def _get_trust_command(self, args: List[str]) -> str:
-        """Get trust score"""
-        from security.trust_scorer import trust_scorer
-        
-        service_or_user = args[0] if args else "orchestrator:system"
-        
-        report = trust_scorer.get_trust_report(service_or_user)
-        
-        if "error" in report:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{report['error']}"
-        
-        score = report['current_score']
-        is_trustworthy = report.get('is_trustworthy', False)
-        needs_attention = report.get('needs_attention', False)
-        
-        emoji = (
-            TelegramEmoji.TRUST_HIGH.value if score > 70
-            else TelegramEmoji.TRUST_MED.value if score > 40
-            else TelegramEmoji.TRUST_LOW.value
-        )
-        
-        status = "OK" if is_trustworthy else "NEEDS ATTENTION" if needs_attention else "WARNING"
-        
-        message = (
-            f"{emoji} <b>TRUST SCORE</b>\n\n"
-            f"<b>Service:</b> {report['service_or_user']}\n"
-            f"<b>Current Score:</b> <code>{score:.1f}</code> / 100\n"
-            f"<b>Status:</b> {status}\n\n"
-            f"<b>Last Updated:</b> {datetime.fromtimestamp(report['last_updated']).strftime('%Y-%m-%d %H:%M:%S')}\n"
-            f"<b>Recent Events (24h):</b> {report.get('recent_events_count', 0)}\n"
-            f"<b>24h Weight Change:</b> {report.get('recent_24h_weight', 0):+.1f}\n"
-        )
-        
-        return message
-    
-    def _get_help_command(self, args: List[str]) -> str:
-        """Get help message with all commands"""
-        return (
-            f"\U0001F916 <b>GOD MODE QUANT BOT</b>\n\n"
-            f"<b>Trading Commands:</b>\n"
-            f"\U0001F4C8 <b>/status</b> - Portfolio and system status\n"
-            f"\U0001F4CA <b>/positions</b> - Open positions\n"
-            f"\U0001F4B0 <b>/pnl</b> - P&L summary\n"
-            f"\U0001F4CB <b>/orders</b> - Open orders & positions\n"
-            f"\U0001F3AF <b>/signal</b> - Current trading signal\n\n"
-            f"<b>Engine Commands:</b>\n"
-            f"\U0001F916 <b>/engine</b> - Engine status\n"
-            f"\U0001F7E2 <b>/start</b> - Start trading engine\n"
-            f"\U0001F534 <b>/stop</b> - Stop trading engine\n"
-            f"\u26A1 <b>/leverage</b> - Get/set leverage\n\n"
-            f"<b>Risk Commands:</b>\n"
-            f"\U0001F6E1 <b>/risk</b> - Risk report\n"
-            f"\U0001F4C8 <b>/var</b> - Value at Risk\n"
-            f"\U0001F3AF <b>/kelly</b> - Kelly Criterion stats\n\n"
-            f"<b>Strategy Commands:</b>\n"
-            f"\U0001F4CA <b>/strategies</b> - Strategy router status\n\n"
-            f"<b>System Commands:</b>\n"
-            f"\U0001F3AF <b>/trust</b> - Trust score\n"
-            f"\U0001F6A8 <b>/alerts</b> - Alert settings\n"
-            f"\U0001F4CB <b>/summary</b> - Daily summary\n"
-            f"\U0001F4E2 <b>/help</b> - Show this help\n"
-        )
-    
-    def _get_pnl_command(self, args: List[str]) -> str:
-        """Get P&L summary"""
-        from risk_management import risk_manager
-        
-        portfolio = risk_manager.portfolio
-        
-        pnl = portfolio.total_unrealized_pnl
-        pnl_str, pnl_emoji = self._format_pnl(pnl)
-        pnl_pct = portfolio.total_unrealized_pnl_percent
-        
-        message = (
-            f"\U0001F4B0 <b>P&L SUMMARY</b>\n\n"
-            f"<b>Unrealized P&L:</b>\n"
-            f"  {pnl_emoji} {pnl_str} ({pnl_pct:+.2f}%)\n\n"
-            f"<b>Portfolio Value:</b> {self._format_price(portfolio.total_value)}\n"
-            f"<b>Positions Value:</b> {self._format_price(portfolio.positions_value)}\n"
-            f"<b>Cash:</b> {self._format_price(portfolio.cash)}\n"
-        )
-        
-        if portfolio.positions:
-            best_pnl = max((p.unrealized_pnl for p in portfolio.positions.values()), default=0)
-            worst_pnl = min((p.unrealized_pnl for p in portfolio.positions.values()), default=0)
-            
-            message += (
-                f"\n<b>Best Performer:</b> {self._format_price(best_pnl)}\n"
-                f"<b>Worst Performer:</b> {self._format_price(worst_pnl)}"
-            )
-        
-        return message
-    
-    def _get_summary_command(self, args: List[str]) -> str:
-        """Get daily summary"""
-        return self._get_status_command(args) + "\n\n" + self._get_pnl_command(args)
-    
-    def _get_alerts_command(self, args: List[str]) -> str:
-        """Get alert settings"""
-        message = (
-            f"\U0001F6A8 <b>ALERT SETTINGS</b>\n\n"
-            f"<b>Risk Thresholds:</b>\n"
-            f"  Max Drawdown: {self.alert_thresholds['max_drawdown']:.1f}%\n"
-            f"  Max Position Risk: {self.alert_thresholds['max_position_risk']:.1f}%\n"
-            f"  Max Portfolio Risk: {self.alert_thresholds['max_portfolio_risk']:.1f}%\n\n"
-            f"<b>Trust Thresholds:</b>\n"
-            f"  Low Warning: {self.alert_thresholds['trust_score_low']:.1f}\n"
-            f"  Critical: {self.alert_thresholds['trust_score_critical']:.1f}\n\n"
-            f"<b>Rate Limiting:</b>\n"
-            f"  Alert Cooldown: {self.alert_cooldown // 60} minutes\n\n"
-            f"<b>Settings:</b>\n"
-            f"Use /help for command list"
-        )
-        return message
-    
-    # ==================== NEW TRADING ENGINE COMMANDS ====================
-    
-    def _get_engine_command(self, args: List[str]) -> str:
-        """Get trading engine status"""
-        try:
-            from trading_engine import get_trading_engine
-            engine = get_trading_engine()
-            
-            if engine is None:
-                return "\U0001F916 <b>ENGINE STATUS</b>\n\nEngine not initialized.\nUse /start to initialize."
-            
-            status = engine.get_status()
-            
-            state_emoji = {
-                "TRADING": "\U0001F7E2",
-                "READY": "\U0001F7E1",
-                "PAUSED": "\U0001F7E0",
-                "STOPPED": "\U0001F534",
-                "ERROR": "\U0001F534",
-            }.get(status.state, "\u26AA")
-            
-            pnl_str, pnl_emoji = self._format_pnl(status.total_pnl)
-            
-            message = (
-                f"\U0001F916 <b>ENGINE STATUS</b>\n\n"
-                f"<b>State:</b> {state_emoji} {status.state}\n"
-                f"<b>Balance:</b> {self._format_price(status.balance)}\n"
-                f"<b>Leverage:</b> {status.leverage}x\n"
-                f"<b>Positions:</b> {status.positions_count}\n\n"
-                f"<b>Total P&L:</b> {pnl_emoji} {pnl_str}\n"
-                f"<b>Daily P&L:</b> {status.daily_pnl_percent:+.2f}%\n"
-                f"<b>Win Rate:</b> {status.win_rate:.1f}%\n"
-                f"<b>Total Trades:</b> {status.total_trades}\n\n"
-                f"<b>Market Regime:</b> {status.current_regime}\n"
-                f"<b>Best Strategy:</b> {status.best_strategy}\n"
-                f"<b>Kelly Fraction:</b> {status.kelly_fraction:.2%}\n"
-                f"<b>VaR (95%):</b> ${status.var_95:.2f} ({status.var_95_percent:.2f}%)\n"
-                f"<b>Risk Level:</b> {status.risk_level}\n"
-                f"<b>Circuit Breaker:</b> {status.circuit_breaker_state}\n"
-                f"<b>Can Trade:</b> {'YES' if status.can_trade else 'NO'}\n"
-            )
-            
-            return message
-            
-        except Exception as e:
-            return f"\U0001F6AB <b>ENGINE ERROR</b>\n\n{str(e)}"
-    
-    def _get_start_command(self, args: List[str]) -> str:
-        """Start the trading engine"""
-        try:
-            from trading_engine import get_trading_engine
-            engine = get_trading_engine()
-            
-            if engine is None:
-                return "\U0001F6AB Engine not initialized"
-            
-            if engine.state.value == "TRADING":
-                return "\U0001F7E2 Engine is already trading"
-            
-            success = engine.start()
-            
-            if success:
-                return "\U0001F7E2 <b>ENGINE STARTED</b>\n\nTrading is now active"
-            else:
-                return f"\U0001F534 <b>ENGINE FAILED TO START</b>\n\nState: {engine.state.value}"
-                
-        except Exception as e:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{str(e)}"
     
     def _get_stop_command(self, args: List[str]) -> str:
         """Stop the trading engine"""
@@ -980,10 +519,57 @@ class TelegramDashboard:
             
             engine.stop()
             return "\U0001F534 <b>ENGINE STOPPED</b>\n\nTrading has been halted"
-                
+                 
         except Exception as e:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{str(e)}"
-    
+            logger.error(f"Error in _get_stop_command: {e}")
+            return f"\U0001F6AB <b>Error stopping engine</b>\n\n{str(e)}"
+     
+    def _get_engine_command(self, args: List[str]) -> str:
+        """Get engine status"""
+        try:
+            from trading_engine import get_trading_engine
+            engine = get_trading_engine()
+            
+            if engine is None:
+                return "\U0001F916 <b>ENGINE STATUS</b>\n\nEngine not initialized.\nUse /start to initialize."
+            
+            status = engine.get_status()
+            
+            state_emoji = {
+                "INITIALIZING": "\u23F3",
+                "READY": "\U0001F7E1",
+                "TRADING": "\U0001F7E2",
+                "PAUSED": "\U000023F8",
+                "STOPPED": "\U0001F534",
+                "ERROR": "\U0001F6A8",
+            }.get(status.state, "\u26AA")
+            
+            message = (
+                f"{state_emoji} <b>ENGINE STATUS</b>\n\n"
+                f"<b>State:</b> {status.state}\n"
+                f"<b>Balance:</b> {self._format_price(status.balance)}\n"
+                f"<b>Leverage:</b> {status.leverage}x\n"
+                f"<b>Symbol:</b> {engine.symbol}\n"
+                f"<b>Positions:</b> {status.positions_count}\n"
+                f"<b>Total P&L:</b> {self._format_price(status.total_pnl)}\n"
+                f"<b>Daily P&L:</b> {status.daily_pnl:+.2f} ({status.daily_pnl_percent:+.2f}%)\n"
+                f"<b>Win Rate:</b> {status.win_rate:.1f}%\n"
+                f"<b>Total Trades:</b> {status.total_trades}\n"
+                f"<b>Can Trade:</b> {'YES' if status.can_trade else 'NO'}\n"
+                f"<b>Risk Level:</b> {status.risk_level}\n"
+                f"<b>Circuit Breaker:</b> {status.circuit_breaker_state}\n"
+                f"<b>Market Regime:</b> {status.current_regime}\n"
+                f"<b>Best Strategy:</b> {status.best_strategy}\n"
+                f"<b>Kelly Fraction:</b> {status.kelly_fraction:.2%}\n"
+                f"<b>VaR (95%):</b> ${status.var_95:.2f} ({status.var_95_percent:.2f}%)\n"
+            )
+            
+            return message
+            
+        except Exception as e:
+            logger.error(f"Error in _get_engine_command: {e}")
+            return f"\U0001F6AB <b>Engine unavailable</b>\n\n{str(e)}"
+     
     def _get_leverage_command(self, args: List[str]) -> str:
         """Get or set leverage"""
         try:
@@ -1031,39 +617,47 @@ class TelegramDashboard:
             if engine is None:
                 return "\U0001F6AB Engine not initialized"
             
-            stats = engine.kelly_sizer.get_statistics()
-            
-            edge = stats.get('edge', 'NO DATA')
-            edge_emoji = {
-                'STRONG': '\U0001F7E2',
-                'MODERATE': '\U0001F7E1',
-                'WEAK': '\U0001F7E0',
-                'NO EDGE': '\U0001F534',
-                'NO DATA': '\u26AA',
-                'INSUFFICIENT DATA': '\u26AA',
-            }.get(edge, '\u26AA')
-            
-            recommended_leverage = engine.kelly_sizer.get_recommended_leverage()
-            
-            message = (
-                f"\U0001F3AF <b>KELLY CRITERION</b>\n\n"
-                f"<b>Edge:</b> {edge_emoji} {edge}\n"
-                f"<b>Kelly Fraction:</b> {stats.get('kelly_fraction', 0):.2%}\n"
-                f"<b>Optimal (Half):</b> {stats.get('optimal_fraction', 0):.2%}\n"
-                f"<b>Expected Growth:</b> {stats.get('expected_growth', 0):.4f}\n\n"
-                f"<b>Trade Stats:</b>\n"
-                f"  Total: {stats.get('trades_count', 0)}\n"
-                f"  Wins: {stats.get('wins_count', 0)}\n"
-                f"  Losses: {stats.get('losses_count', 0)}\n"
-                f"  Win Rate: {stats.get('win_rate', 0):.1%}\n\n"
-                f"<b>Recommended Leverage:</b> {recommended_leverage}x\n"
-                f"<b>Portfolio Value:</b> {self._format_price(engine.current_balance)}\n"
-            )
+            if engine.kelly_sizer is None:
+                message = (
+                    f"\U0001F3AF <b>KELLY CRITERION</b>\n\n"
+                    f"Kelly sizer not available (risk management not initialized).\n\n"
+                    f"<i>Initialize risk management to see Kelly statistics</i>"
+                )
+            else:
+                stats = engine.kelly_sizer.get_statistics()
+                
+                edge = stats.get('edge', 'NO DATA')
+                edge_emoji = {
+                    'STRONG': '\U0001F7E2',
+                    'MODERATE': '\U0001F7E1',
+                    'WEAK': '\U0001F7E0',
+                    'NO EDGE': '\U0001F534',
+                    'NO DATA': '\u26AA',
+                    'INSUFFICIENT DATA': '\u26AA',
+                }.get(edge, '\u26AA')
+                
+                recommended_leverage = engine.kelly_sizer.get_recommended_leverage()
+                
+                message = (
+                    f"\U0001F3AF <b>KELLY CRITERION</b>\n\n"
+                    f"<b>Edge:</b> {edge_emoji} {edge}\n"
+                    f"<b>Kelly Fraction:</b> {stats.get('kelly_fraction', 0):.2%}\n"
+                    f"<b>Optimal (Half):</b> {stats.get('optimal_fraction', 0):.2%}\n"
+                    f"<b>Expected Growth:</b> {stats.get('expected_growth', 0):.4f}\n\n"
+                    f"<b>Trade Stats:</b>\n"
+                    f"  Total: {stats.get('trades_count', 0)}\n"
+                    f"  Wins: {stats.get('wins_count', 0)}\n"
+                    f"  Losses: {stats.get('losses_count', 0)}\n"
+                    f"  Win Rate: {stats.get('win_rate', 0):.1%}\n\n"
+                    f"<b>Recommended Leverage:</b> {recommended_leverage}x\n"
+                    f"<b>Portfolio Value:</b> {self._format_price(engine.current_balance)}\n"
+                )
             
             return message
             
         except Exception as e:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{str(e)}"
+            logger.error(f"Error in _get_kelly_command: {e}")
+            return f"\U0001F6AB <b>Kelly unavailable</b>\n\n{str(e)}"
     
     def _get_strategies_command(self, args: List[str]) -> str:
         """Get strategy router status"""
@@ -1144,7 +738,8 @@ class TelegramDashboard:
             return message
             
         except Exception as e:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{str(e)}"
+            logger.error(f"Error in _get_signal_command: {e}")
+            return f"\U0001F6AB <b>Signal unavailable</b>\n\n{str(e)}"
     
     def _get_orders_command(self, args: List[str]) -> str:
         """Get open orders and positions"""
@@ -1208,39 +803,41 @@ class TelegramDashboard:
             risk_report = engine.get_risk_report()
             var_data = risk_report.get('var', {})
             
-            if not var_data:
-                return (
+            if not var_data or engine.var_calculator is None:
+                message = (
                     f"\U0001F4C8 <b>VALUE AT RISK</b>\n\n"
-                    f"Insufficient data for VaR calculation.\n"
-                    f"Need at least 10 trades."
+                    f"Value at Risk calculator not available.\n"
+                    f"This may be due to insufficient trading data or risk management not initialized.\n\n"
+                    f"<i>Collect more trading data to enable VaR calculation</i>"
                 )
-            
-            risk_level = var_data.get('risk_level', 'UNKNOWN')
-            risk_emoji = {
-                'LOW': '\U0001F7E2',
-                'MODERATE': '\U0001F7E1',
-                'HIGH': '\U0001F7E0',
-                'CRITICAL': '\U0001F534',
-            }.get(risk_level, '\u26AA')
-            
-            message = (
-                f"\U0001F4C8 <b>VALUE AT RISK</b>\n\n"
-                f"<b>Risk Level:</b> {risk_emoji} {risk_level}\n\n"
-                f"<b>VaR (95%):</b> ${var_data.get('var_95_dollars', 0):.2f}\n"
-                f"  ({var_data.get('var_95_percent', 0):.2f}% of portfolio)\n\n"
-                f"<b>VaR (99%):</b> ${var_data.get('var_99_dollars', 0):.2f}\n"
-                f"  ({var_data.get('var_99_percent', 0):.2f}% of portfolio)\n\n"
-                f"<b>CVaR (95%):</b> ${var_data.get('cvar_95', 0):.2f}\n"
-                f"<b>CVaR (99%):</b> ${var_data.get('cvar_99', 0):.2f}\n\n"
-                f"<b>Max Drawdown:</b> {var_data.get('max_drawdown_percent', 0):.2f}%\n"
-                f"<b>Volatility:</b> {var_data.get('volatility_annualized', 0):.2f}%\n"
-                f"<b>Method:</b> {var_data.get('method', 'N/A')}\n"
-            )
+            else:
+                risk_level = var_data.get('risk_level', 'UNKNOWN')
+                risk_emoji = {
+                    'LOW': '\U0001F7E2',
+                    'MODERATE': '\U0001F7E1',
+                    'HIGH': '\U0001F7E0',
+                    'CRITICAL': '\U0001F534',
+                }.get(risk_level, '\u26AA')
+                
+                message = (
+                    f"\U0001F4C8 <b>VALUE AT RISK</b>\n\n"
+                    f"<b>Risk Level:</b> {risk_emoji} {risk_level}\n\n"
+                    f"<b>VaR (95%):</b> ${var_data.get('var_95_dollars', 0):.2f}\n"
+                    f"  ({var_data.get('var_95_percent', 0):.2f}% of portfolio)\n\n"
+                    f"<b>VaR (99%):</b> ${var_data.get('var_99_dollars', 0):.2f}\n"
+                    f"  ({var_data.get('var_99_percent', 0):.2f}% of portfolio)\n\n"
+                    f"<b>CVaR (95%):</b> ${var_data.get('cvar_95', 0):.2f}\n"
+                    f"<b>CVaR (99%):</b> ${var_data.get('cvar_99', 0):.2f}\n\n"
+                    f"<b>Max Drawdown:</b> {var_data.get('max_drawdown_percent', 0):.2f}%\n"
+                    f"<b>Volatility:</b> {var_data.get('volatility_annualized', 0):.2f}%\n"
+                    f"<b>Method:</b> {var_data.get('method', 'N/A')}\n"
+                )
             
             return message
             
         except Exception as e:
-            return f"\U0001F6AB <b>ERROR</b>\n\n{str(e)}"
+            logger.error(f"Error in _get_var_command: {e}")
+            return f"\U0001F6AB <b>VaR unavailable</b>\n\n{str(e)}"
 
     def _get_unknown_command(self, command: str) -> str:
         """Handle unknown commands"""
@@ -1332,11 +929,106 @@ class TelegramDashboard:
         )
         
         return self._send_message(message)
+    
+    def check_trust_score_change(self, service: str, trust_score: float) -> None:
+        """Check and alert on trust score changes"""
+        last_score = self.last_trust_score.get(service)
+        
+        if last_score is not None:
+            change = last_score - trust_score
+            
+            if abs(change) >= 10:
+                alert_type = "critical" if trust_score < self.alert_thresholds["trust_score_critical"] else "warning"
+                emoji = TelegramEmoji.DANGER.value if alert_type == "critical" else TelegramEmoji.WARNING.value
+                
+                message = (
+                    f"{emoji} <b>TRUST SCORE ALERT</b>\n\n"
+                    f"<b>Service:</b> {service}\n"
+                    f"<b>Previous:</b> {last_score:.1f}\n"
+                    f"<b>Current:</b> {trust_score:.1f}\n"
+                    f"<b>Change:</b> {change:+.1f}"
+                )
+                
+                if self._should_send_alert(f"trust_{service}"):
+                    self._send_message(message)
+                    self.last_alert_time[f"trust_{service}"] = time.time()
+        
+        self.last_trust_score[service] = trust_score
+
+    # ==================== TRADE NOTIFICATION METHODS ====================
+
+    def send_trade_entry(self, trade: 'TradeNotification') -> bool:
+        """Send trade entry notification"""
+        side_emoji = TelegramEmoji.LONG.value if trade.side == "LONG" else TelegramEmoji.SHORT.value
+        message = (
+            f"{side_emoji} <b>TRADE ENTRY</b>\n\n"
+            f"<b>Symbol:</b> {trade.symbol}\n"
+            f"<b>Side:</b> {trade.side}\n"
+            f"<b>Quantity:</b> {trade.quantity:.6f}\n"
+            f"<b>Entry:</b> {self._format_price(trade.entry_price)}\n"
+        )
+        if trade.stop_loss:
+            message += f"<b>Stop Loss:</b> {self._format_price(trade.stop_loss)}\n"
+        if trade.take_profit:
+            message += f"<b>Take Profit:</b> {self._format_price(trade.take_profit)}\n"
+        message += f"<b>Strategy:</b> {trade.strategy}\n"
+        message += f"\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+
+        self._increment_metric(self.telegram_messages_sent, {"message_type": "trade_entry", "status": "sent"})
+        return self._send_message(message)
+
+    def send_trade_exit(self, trade: 'TradeNotification') -> bool:
+        """Send trade exit notification"""
+        pnl_str, pnl_emoji = self._format_pnl(trade.pnl or 0)
+        message = (
+            f"{TelegramEmoji.EXIT.value} <b>TRADE EXIT</b>\n\n"
+            f"<b>Symbol:</b> {trade.symbol}\n"
+            f"<b>Side:</b> {trade.side}\n"
+            f"<b>Quantity:</b> {trade.quantity:.6f}\n"
+            f"<b>Entry:</b> {self._format_price(trade.entry_price)}\n"
+        )
+        if trade.current_price:
+            message += f"<b>Exit:</b> {self._format_price(trade.current_price)}\n"
+        message += f"{pnl_emoji} <b>P&L:</b> {pnl_str}\n"
+        if trade.pnl_percent is not None:
+            message += f"<b>P&L %:</b> {trade.pnl_percent:+.2f}%\n"
+        message += f"\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+
+        self._increment_metric(self.telegram_messages_sent, {"message_type": "trade_exit", "status": "sent"})
+        return self._send_message(message)
+
+    def send_risk_alert(self, alert: 'RiskAlertNotification') -> bool:
+        """Send risk alert notification"""
+        severity_emoji = {
+            "LOW": TelegramEmoji.WARNING.value,
+            "MEDIUM": TelegramEmoji.WARNING.value,
+            "HIGH": TelegramEmoji.DANGER.value,
+            "CRITICAL": TelegramEmoji.DANGER.value,
+        }.get(alert.severity, TelegramEmoji.WARNING.value)
+
+        message = (
+            f"{severity_emoji} <b>RISK ALERT [{alert.severity}]</b>\n\n"
+            f"<b>Type:</b> {alert.alert_type}\n"
+            f"<b>Message:</b> {alert.message}\n"
+        )
+        if alert.details:
+            message += "\n<b>Details:</b>\n"
+            for key, value in alert.details.items():
+                message += f"  • {key}: {value}\n"
+        message += f"\n⏰ {datetime.now().strftime('%H:%M:%S')}"
+
+        self._increment_metric(self.telegram_messages_sent, {"message_type": "risk_alert", "status": "sent"})
+        return self._send_message(message)
 
 
 # Global dashboard instance
 _dashboard_instance: Optional[TelegramDashboard] = None
 
+# Import system monitor
+from telegram_system_monitor import (
+    SystemArchitectureDisplay,
+    SystemMetricsCollector
+)
 
 def init_telegram_dashboard(bot_token: str = None, chat_id: str = None) -> TelegramDashboard:
     """Initialize the global Telegram dashboard"""

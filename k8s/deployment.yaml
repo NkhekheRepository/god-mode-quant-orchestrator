@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: god-mode-orchestrator
+  labels:
+    app: god-mode-orchestrator
+    version: v1.0.0
+    environment: production
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: god-mode-orchestrator
+  template:
+    metadata:
+      labels:
+        app: god-mode-orchestrator
+        version: v1.0.0
+    spec:
+      containers:
+      - name: orchestrator
+        image: god-mode-orchestrator:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8003
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: god-mode-config
+        - secretRef:
+            name: god-mode-secrets
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health/live
+            port: 8003
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health/ready
+            port: 8003
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health/startup
+            port: 8003
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 30
+        volumeMounts:
+        - name: app-data
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/logs
+      volumes:
+      - name: app-data
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
+      terminationGracePeriodSeconds: 60
+      serviceAccountName: god-mode-sa
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: god-mode-orchestrator
+  labels:
+    app: god-mode-orchestrator
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8003
+    targetPort: 8003
+    name: http
+    protocol: TCP
+  selector:
+    app: god-mode-orchestrator

@@ -9,10 +9,48 @@ flask-httpauth>=4.8.0
 hvac
 prometheus_client>=0.19.0
 python-dotenv
-tensorflow>=2.13.0
-numpy>=1.24.0
+# tensorflow>=2.16.0  # Removed - conflicts with VNPy's numpy>=2.2.3 requirement. Use PyTorch instead.
+numpy>=2.2.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
 mlflow>=2.7.0
 torch>=2.0.0
 transformers>=4.30.0
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-multipart>=0.0.6
+slowapi>=0.1.9
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
+bcrypt>=4.1.2
+cryptography>=41.0.0
+aiofiles>=23.2.1
+httpx>=0.25.0
+# Observability
+opentelemetry-api==1.20.0
+opentelemetry-sdk==1.20.0
+# opentelemetry-instrumentation-fastapi==0.30.0  # Temporarily disabled due to compatibility issues
+# opentelemetry-instrumentation-jinja2==0.30.0   # Temporarily disabled due to compatibility issues
+opentelemetry-exporter-otlp==1.20.0
+# jaeger-client>=4.9.0  # Disabled - not available for Python 3.12
+sentry-sdk>=1.40.0
+elasticsearch>=8.10.0
+
+# Additional security
+bandit>=1.7.8
+safety>=2.3.10
+
+# Testing
+pytest>=7.4.3
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.1
+pytest-mock>=3.11.1
+pytest-xdist>=3.3.1
+
+# Database
+sqlalchemy>=2.0.23
+alembic>=1.12.1
+

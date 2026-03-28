@@ -26,6 +26,7 @@ try:
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False
+    mlflow = None
     logger.warning("MLflow not available. Install with: pip install mlflow")
 
 
@@ -94,7 +95,7 @@ class MLOpsManager:
         self,
         run_name: str = None,
         tags: Dict = None
-    ) -> mlflow.ActiveRun:
+    ) -> Any:
         """
         Start a new MLflow run
         

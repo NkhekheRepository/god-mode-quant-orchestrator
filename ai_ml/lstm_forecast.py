@@ -12,7 +12,7 @@ try:
     from tensorflow import keras
     from tensorflow.keras.models import Sequential, Model
     from tensorflow.keras.layers import (
-        LSTM, Dense, Dropout, Input, Bidirectional, 
+        LSTM, Dense, Dropout, Input, Bidirectional,
         Attention, LayerNormalization, RepeatVector, TimeDistributed
     )
     from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
@@ -20,6 +20,7 @@ try:
     TENSORFLOW_AVAILABLE = True
 except ImportError:
     TENSORFLOW_AVAILABLE = False
+    Model = None
     print("TensorFlow not available. Install with: pip install tensorflow")
 
 class LSTMPricePredictor:
