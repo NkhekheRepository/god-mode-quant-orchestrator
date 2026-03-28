@@ -65,6 +65,7 @@ services:
         condition: service_healthy
     ports:
       - "8003:8003"
+      - "9091:9091"  # App metrics (9090 reserved for Prometheus)
     deploy:
       resources:
         limits:

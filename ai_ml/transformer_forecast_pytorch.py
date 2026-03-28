@@ -17,6 +17,7 @@ try:
     PYTORCH_AVAILABLE = True
 except ImportError:
     PYTORCH_AVAILABLE = False
+    nn = None  # Placeholder for type hints
     print("PyTorch not available. Install with: pip install torch")
 
 # Import LSTMPricePredictor for HybridPredictor
@@ -29,108 +30,125 @@ except ImportError:
         LSTMPricePredictor = None
 
 
-class PositionalEncoding(nn.Module):
-    """Positional encoding for transformer"""
-    
-    def __init__(self, d_model: int, max_len: int = 5000):
-        super().__init__()
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe', pe)
-    
-    def forward(self, x):
-        return x + self.pe[:, :x.size(1), :]
+if PYTORCH_AVAILABLE:
+    class PositionalEncoding(nn.Module):
+        """Positional encoding for transformer"""
+
+        def __init__(self, d_model: int, max_len: int = 5000):
+            super().__init__()
+            pe = torch.zeros(max_len, d_model)
+            position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+            div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+            pe[:, 0::2] = torch.sin(position * div_term)
+            pe[:, 1::2] = torch.cos(position * div_term)
+            pe = pe.unsqueeze(0)
+            self.register_buffer('pe', pe)
+
+        def forward(self, x):
+            return x + self.pe[:, :x.size(1), :]
 
 
-class TransformerBlock(nn.Module):
-    """Transformer encoder block"""
-    
-    def __init__(self, embed_dim: int, num_heads: int, ff_dim: int, dropout: float = 0.1):
-        super().__init__()
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
-        self.ffn = nn.Sequential(
-            nn.Linear(embed_dim, ff_dim),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(ff_dim, embed_dim)
-        )
-        self.layernorm1 = nn.LayerNorm(embed_dim)
-        self.layernorm2 = nn.LayerNorm(embed_dim)
-        self.dropout1 = nn.Dropout(dropout)
-        self.dropout2 = nn.Dropout(dropout)
-    
-    def forward(self, x):
-        # Self-attention
-        attn_out, _ = self.attention(x, x, x)
-        attn_out = self.dropout1(attn_out)
-        out1 = self.layernorm1(x + attn_out)
-        
-        # Feed-forward
-        ffn_out = self.ffn(out1)
-        ffn_out = self.dropout2(ffn_out)
-        return self.layernorm2(out1 + ffn_out)
+    class TransformerBlock(nn.Module):
+        """Transformer encoder block"""
+
+        def __init__(self, embed_dim: int, num_heads: int, ff_dim: int, dropout: float = 0.1):
+            super().__init__()
+            self.attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout, batch_first=True)
+            self.ffn = nn.Sequential(
+                nn.Linear(embed_dim, ff_dim),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(ff_dim, embed_dim)
+            )
+            self.layernorm1 = nn.LayerNorm(embed_dim)
+            self.layernorm2 = nn.LayerNorm(embed_dim)
+            self.dropout1 = nn.Dropout(dropout)
+            self.dropout2 = nn.Dropout(dropout)
+
+        def forward(self, x):
+            # Self-attention
+            attn_out, _ = self.attention(x, x, x)
+            attn_out = self.dropout1(attn_out)
+            out1 = self.layernorm1(x + attn_out)
+
+            # Feed-forward
+            ffn_out = self.ffn(out1)
+            ffn_out = self.dropout2(ffn_out)
+            return self.layernorm2(out1 + ffn_out)
 
 
-class TransformerModel(nn.Module):
-    """Transformer model for time series prediction"""
-    
-    def __init__(
-        self,
-        input_size: int = 1,
-        embed_dim: int = 128,
-        num_heads: int = 4,
-        ff_dim: int = 256,
-        num_layers: int = 3,
-        dropout: float = 0.1,
-        sequence_length: int = 60
-    ):
-        super().__init__()
-        self.embed_dim = embed_dim
-        
-        # Input projection
-        self.input_projection = nn.Linear(input_size, embed_dim)
-        
-        # Positional encoding
-        self.pos_encoding = PositionalEncoding(embed_dim, max_len=sequence_length)
-        
-        # Transformer blocks
-        self.transformer_blocks = nn.ModuleList([
-            TransformerBlock(embed_dim, num_heads, ff_dim, dropout)
-            for _ in range(num_layers)
-        ])
-        
-        # Output layers
-        self.global_pool = nn.AdaptiveAvgPool1d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(embed_dim, 64),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(64, 1)
-        )
-    
-    def forward(self, x):
-        # x shape: (batch, seq_len, input_size)
-        
-        # Project to embed_dim
-        x = self.input_projection(x)
-        
-        # Add positional encoding
-        x = self.pos_encoding(x)
-        
-        # Apply transformer blocks
-        for transformer in self.transformer_blocks:
-            x = transformer(x)
-        
-        # Global average pooling
-        x = x.permute(0, 2, 1)  # (batch, embed_dim, seq_len)
-        x = self.global_pool(x).squeeze(-1)  # (batch, embed_dim)
-        
-        # Output
-        return self.fc(x)
+    class TransformerModel(nn.Module):
+        """Transformer model for time series prediction"""
+
+        def __init__(
+            self,
+            input_size: int = 1,
+            embed_dim: int = 128,
+            num_heads: int = 4,
+            ff_dim: int = 256,
+            num_layers: int = 3,
+            dropout: float = 0.1,
+            sequence_length: int = 60
+        ):
+            super().__init__()
+            self.embed_dim = embed_dim
+
+            # Input projection
+            self.input_projection = nn.Linear(input_size, embed_dim)
+
+            # Positional encoding
+            self.pos_encoding = PositionalEncoding(embed_dim, max_len=sequence_length)
+
+            # Transformer blocks
+            self.transformer_blocks = nn.ModuleList([
+                TransformerBlock(embed_dim, num_heads, ff_dim, dropout)
+                for _ in range(num_layers)
+            ])
+
+            # Output layers
+            self.global_pool = nn.AdaptiveAvgPool1d(1)
+            self.fc = nn.Sequential(
+                nn.Linear(embed_dim, 64),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(64, 1)
+            )
+
+        def forward(self, x):
+            # x shape: (batch, seq_len, input_size)
+
+            # Project to embed_dim
+            x = self.input_projection(x)
+
+            # Add positional encoding
+            x = self.pos_encoding(x)
+
+            # Apply transformer blocks
+            for transformer in self.transformer_blocks:
+                x = transformer(x)
+
+            # Global average pooling
+            x = x.permute(0, 2, 1)  # (batch, embed_dim, seq_len)
+            x = self.global_pool(x).squeeze(-1)  # (batch, embed_dim)
+
+            # Output
+            return self.fc(x)
+else:
+    # Stub classes when PyTorch not available
+    class PositionalEncoding:
+        """Stub for PositionalEncoding when PyTorch not available"""
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for PositionalEncoding. Install with: pip install torch")
+
+    class TransformerBlock:
+        """Stub for TransformerBlock when PyTorch not available"""
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for TransformerBlock. Install with: pip install torch")
+
+    class TransformerModel:
+        """Stub for TransformerModel when PyTorch not available"""
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for TransformerModel. Install with: pip install torch")
 
 
 class TransformerPricePredictor:

@@ -25,6 +25,9 @@ spec:
         - containerPort: 8003
           name: http
           protocol: TCP
+        - containerPort: 9091
+          name: metrics
+          protocol: TCP
         envFrom:
         - configMapRef:
             name: god-mode-config
@@ -83,19 +86,3 @@ spec:
         emptyDir: {}
       terminationGracePeriodSeconds: 60
       serviceAccountName: god-mode-sa
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: god-mode-orchestrator
-  labels:
-    app: god-mode-orchestrator
-spec:
-  type: ClusterIP
-  ports:
-  - port: 8003
-    targetPort: 8003
-    name: http
-    protocol: TCP
-  selector:
-    app: god-mode-orchestrator

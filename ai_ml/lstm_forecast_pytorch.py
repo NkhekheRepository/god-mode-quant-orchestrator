@@ -16,50 +16,58 @@ try:
     PYTORCH_AVAILABLE = True
 except ImportError:
     PYTORCH_AVAILABLE = False
+    nn = None  # Placeholder for type hints
     print("PyTorch not available. Install with: pip install torch")
 
 
-class LSTMModel(nn.Module):
-    """LSTM Neural Network for time series prediction"""
-    
-    def __init__(
-        self,
-        input_size: int = 1,
-        hidden_size: int = 128,
-        num_layers: int = 2,
-        dropout: float = 0.2,
-        bidirectional: bool = True
-    ):
-        super().__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        
-        self.lstm = nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0,
-            bidirectional=bidirectional
-        )
-        
-        # Calculate output size based on bidirectional
-        output_size = hidden_size * 2 if bidirectional else hidden_size
-        
-        self.fc = nn.Sequential(
-            nn.Linear(output_size, 64),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(64, 1)
-        )
-    
-    def forward(self, x):
-        # x shape: (batch, seq_len, input_size)
-        lstm_out, _ = self.lstm(x)
-        # Take the last output
-        last_output = lstm_out[:, -1, :]
-        return self.fc(last_output)
+if PYTORCH_AVAILABLE:
+    class LSTMModel(nn.Module):
+        """LSTM Neural Network for time series prediction"""
+
+        def __init__(
+            self,
+            input_size: int = 1,
+            hidden_size: int = 128,
+            num_layers: int = 2,
+            dropout: float = 0.2,
+            bidirectional: bool = True
+        ):
+            super().__init__()
+            self.hidden_size = hidden_size
+            self.num_layers = num_layers
+            self.bidirectional = bidirectional
+
+            self.lstm = nn.LSTM(
+                input_size=input_size,
+                hidden_size=hidden_size,
+                num_layers=num_layers,
+                batch_first=True,
+                dropout=dropout if num_layers > 1 else 0,
+                bidirectional=bidirectional
+            )
+
+            # Calculate output size based on bidirectional
+            output_size = hidden_size * 2 if bidirectional else hidden_size
+
+            self.fc = nn.Sequential(
+                nn.Linear(output_size, 64),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(64, 1)
+            )
+
+        def forward(self, x):
+            # x shape: (batch, seq_len, input_size)
+            lstm_out, _ = self.lstm(x)
+            # Take the last output
+            last_output = lstm_out[:, -1, :]
+            return self.fc(last_output)
+else:
+    # Stub class when PyTorch not available
+    class LSTMModel:
+        """Stub for LSTMModel when PyTorch not available"""
+        def __init__(self, *args, **kwargs):
+            raise ImportError("PyTorch is required for LSTMModel. Install with: pip install torch")
 
 
 class LSTMPricePredictor:

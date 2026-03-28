@@ -344,10 +344,10 @@ def main():
     # ============================================================
     try:
         from prometheus_client import start_http_server
-        # Start metrics server on port 9090
-        metrics_thread = Thread(target=start_http_server, args=(9090,), daemon=True)
+        # Start metrics server on port 9091 (9090 reserved for Prometheus)
+        metrics_thread = Thread(target=start_http_server, args=(9091,), daemon=True)
         metrics_thread.start()
-        logger.info("Prometheus metrics server started on port 9090")
+        logger.info("Prometheus metrics server started on port 9091")
     except ImportError:
         logger.warning("prometheus_client not available, metrics disabled")
     except Exception as e:
