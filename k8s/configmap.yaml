@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: god-mode-config
+  labels:
+    app: god-mode-orchestrator
+data:
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "vnpy"
+  POSTGRES_USER: "postgres"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  BINANCE_TESTNET: "true"
+  TRADING_SYMBOL: "BTCUSDT"
+  TRADING_INTERVAL: "5"
+  STARTING_CAPITAL: "10"
+  MAX_LEVERAGE: "75"
+  DAILY_LOSS_LIMIT: "3"
+  DEFAULT_STOP_LOSS: "1.5"
+  DEFAULT_TAKE_PROFIT: "4"
+  LOG_LEVEL: "INFO"
+  ENVIRONMENT: "production"

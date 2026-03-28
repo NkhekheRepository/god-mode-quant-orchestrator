@@ -87,7 +87,7 @@ Get running in 5 minutes:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/NkhekheRepository/REAL-GOD-MODE-QUANT.git
+git clone https://github.com/NkhekheRepository/god-mode-quant-orchestrator.git
 cd godmode-quant-orchestrator
 
 # 2. Configure environment
@@ -305,7 +305,7 @@ def submit_order():
 
 ```bash
 # Clone repository
-git clone https://github.com/NkhekheRepository/REAL-GOD-MODE-QUANT.git
+git clone https://github.com/NkhekheRepository/god-mode-quant-orchestrator.git
 cd godmode-quant-orchestrator
 
 # Configure environment
@@ -322,6 +322,39 @@ docker-compose logs -f trading-orchestrator
 # Check health
 curl http://localhost:8000/health
 ```
+
+### Kubernetes Deployment
+
+**Prerequisites:**
+- Kubernetes cluster (v1.19+)
+- `kubectl` configured
+- `kustomize` or `helm` (optional)
+- Secrets created from `.env`
+
+**Deploy with manifests:**
+
+```bash
+# 1. Create namespace (optional)
+kubectl create namespace quant-trading
+
+# 2. Apply configuration
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/secrets.yaml
+
+# 3. Deploy application
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+
+# 4. Check status
+kubectl get pods -n quant-trading
+kubectl logs -f deployment/god-mode-orchestrator -n quant-trading
+
+# 5. Access service (if LoadBalancer or Ingress configured)
+kubectl port-forward svc/god-mode-orchestrator 8000:8003 -n quant-trading
+curl http://localhost:8000/health
+```
+
+**Note:** Ensure you create the `god-mode-secrets` secret with your environment variables before deployment.
 
 ### Local Development
 
