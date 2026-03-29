@@ -551,6 +551,8 @@ elif prediction['signal'] == -1 and prediction['confidence'] > 0.6:
 - **[ARCHITECTURE.md](ARCHITECTURE.md)**: System architecture documentation
 - **[API.md](API.md)**: API reference documentation
 - **[TELEGRAM_DASHBOARD.md](TELEGRAM_DASHBOARD.md)**: Telegram bot documentation
+- **[TESTS.md](TESTS.md)**: Testing guide, mocking patterns, and test organization
+- **[CONTRIBUTING.md](CONTRIBUTING.md)**: Contribution guidelines, coding standards, and development setup
 - **[docs/ml_service.md](docs/ml_service.md)**: ML Service Layer - Configuration, usage, and integration with trading engine
 
 ## Security Best Practices

@@ -70,12 +70,81 @@ Feature requests are welcome! Please provide:
 
 ## Testing
 
-Currently, the project has minimal automated tests. As the project grows, we will implement:
-- Unit tests for core functionality
-- Integration tests for Docker services
-- End-to-end tests for critical workflows
+The project uses `pytest` as the primary test runner. All tests are located in the `tests/` directory.
 
-Please add tests for any new functionality you implement.
+### Running Tests
+
+Run the entire test suite with verbose output:
+
+```bash
+pytest tests/ -v
+```
+
+Run a specific test file:
+
+```bash
+pytest tests/test_risk_management.py -v
+```
+
+Run a specific test class or method:
+
+```bash
+pytest tests/test_integration.py::TestIntegration::test_risk_management_integration -v
+```
+
+### Test File Structure
+
+```
+tests/
+├── __init__.py
+├── test_integration.py      # End-to-end integration tests
+├── test_risk_management.py  # Risk management unit tests
+└── test_paper_trading.py    # Paper trading and strategy tests
+```
+
+### Adding New Tests
+
+1. **Create a test file** in `tests/` with a descriptive name (e.g., `test_new_feature.py`).
+2. **Use `unittest.TestCase`** as the base class (consistent with existing tests).
+3. **Mock external dependencies** (especially `vnpy`, `numpy`, and network calls) to keep tests isolated and fast.
+4. **Follow naming conventions**:
+   - Test files: `test_*.py`
+   - Test classes: `Test*` (e.g., `TestNewFeature`)
+   - Test methods: `test_*` (e.g., `test_feature_works`)
+5. **Add docstrings** to each test method explaining what is being tested.
+6. **Ensure tests pass** locally before submitting a pull request.
+
+Example test template:
+
+```python
+import unittest
+from unittest.mock import Mock, patch
+
+class TestNewFeature(unittest.TestCase):
+    """Test new feature functionality"""
+    
+    def setUp(self):
+        """Set up test fixtures"""
+        pass
+    
+    def test_feature_behavior(self):
+        """Test that feature behaves as expected"""
+        # Arrange
+        # Act
+        # Assert
+        self.assertTrue(True)
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+### Mocking Patterns
+
+- **VNPy modules**: Mock `vnpy`, `vnpy.event`, `vnpy.trader`, etc., before importing any project modules.
+- **External services**: Mock `requests.post` for Telegram notifications, database connections, etc.
+- **Time delays**: Mock `time.sleep` to speed up tests.
+
+See existing test files for examples of mocking patterns.
 
 ## Code Review Process
 

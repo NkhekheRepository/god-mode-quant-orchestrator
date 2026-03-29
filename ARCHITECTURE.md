@@ -306,6 +306,74 @@ context.verify_mode = ssl.CERT_REQUIRED
 - **Fallback**: Environment variables
 - **Caching**: 5-minute TTL
 
+## Orchestrator Package Structure
+
+The core orchestration logic is organized into a modular `orchestrator` package, enabling clean separation of concerns and easier extension.
+
+### Package Layout
+
+```
+orchestrator/
+├── __init__.py          # Public API exports
+├── lifecycle.py         # Lifecycle management (startup, shutdown, health)
+├── config.py            # Configuration loading and validation
+└── (future modules)     # Additional components as the system grows
+```
+
+### Module Responsibilities
+
+| Module | Purpose | Key Classes/Functions |
+|--------|---------|------------------------|
+| `orchestrator.lifecycle` | Manages the lifecycle of the trading orchestrator, including startup sequence, graceful shutdown, and health monitoring. | `OrchestratorLifecycle` class with methods like `start()`, `stop()`, `is_healthy()` |
+| `orchestrator.config` | Handles configuration loading from environment variables, `.env` files, and defaults. Validates configuration and provides typed access. | `OrchestratorConfig` class with properties for each configuration group (trading, risk, security, etc.) |
+
+### How to Extend the System
+
+#### Adding a New Orchestrator Component
+
+1. **Create a new module** in the `orchestrator/` directory (e.g., `orchestrator/monitoring.py`).
+2. **Define a class** that encapsulates the component's functionality.
+3. **Export the class** in `orchestrator/__init__.py` by adding it to `__all__` and importing it.
+4. **Integrate the component** into the lifecycle by importing it in `lifecycle.py` and adding appropriate initialization and cleanup steps.
+
+Example extension:
+
+```python
+# orchestrator/monitoring.py
+class HealthMonitor:
+    """Continuously monitors system health and triggers alerts"""
+    
+    def __init__(self, lifecycle):
+        self.lifecycle = lifecycle
+    
+    def start(self):
+        # Start background health checks
+        pass
+    
+    def stop(self):
+        # Clean up monitoring resources
+        pass
+```
+
+```python
+# orchestrator/__init__.py
+from .lifecycle import OrchestratorLifecycle
+from .config import OrchestratorConfig
+from .monitoring import HealthMonitor
+
+__all__ = ['OrchestratorLifecycle', 'OrchestratorConfig', 'HealthMonitor']
+```
+
+#### Modifying Lifecycle Behavior
+
+The `OrchestratorLifecycle` class provides hooks for extending startup and shutdown sequences:
+
+- **Before startup**: Add pre‑initialization steps (e.g., loading external data).
+- **After startup**: Add post‑initialization steps (e.g., warming up caches).
+- **Before shutdown**: Add cleanup steps (e.g., flushing buffers, saving state).
+
+Refer to `lifecycle.py` for the exact hook points.
+
 ## Extension Points
 
 ### Adding New Strategies
